@@ -23,4 +23,6 @@ public:
 
 	UMaterialInstanceDynamic* DynamicMaterial;
 
+	bool isMajor = false;
+
 };

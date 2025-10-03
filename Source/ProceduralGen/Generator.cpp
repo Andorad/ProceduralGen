@@ -6,6 +6,26 @@
 #include "Kismet/KismetMathLibrary.h"
 
 //#include "RenderGraphBuilder.inl"
+bool Triangle::IsPointInPointCircumCircle(FVector P)
+{
+	FVector Pos1 = Points[0].Room->GetActorLocation();
+	FVector Pos2 = Points[1].Room->GetActorLocation();
+	FVector Pos3 = Points[2].Room->GetActorLocation();
+	
+	double ax = Pos1.X - P.X;
+	double ay = Pos1.Y - P.Y;
+	double bx = Pos2.X - P.X;
+	double by = Pos2.Y - P.Y;
+	double cx = Pos3.X - P.X;
+	double cy = Pos3.Y - P.Y;
+
+	double det = (ax * ax + ay * ay) * (bx * cy - cx * by)
+				- (bx * bx + by * by) * (ax * cy - cx * ay)
+				+ (cx * cx + cy * cy) * (ax * by - bx * ay);
+
+	return det > 0.0;
+}
+
 
 // Sets default values
 AGenerator::AGenerator()
@@ -30,6 +50,7 @@ void AGenerator::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 }
 
+// Spawns Rooms Points and Triangles
 void AGenerator::SpawnRoomsInRadius()
 {
 	for (int i = 0; i < roomNumber; i++)
@@ -50,6 +71,13 @@ void AGenerator::SpawnRoomsInRadius()
 			{
 				majorRooms.Add(Room);
 				Room->SetColor(MajorMat);
+				
+				Point point;
+				point.Room = Room;
+				point.Pos = Room->GetActorLocation();
+				point.Room->isMajor = true;
+
+				PointsArray.Add(point);
 			}
 			else
 			{
@@ -62,6 +90,161 @@ void AGenerator::SpawnRoomsInRadius()
 	}
 }
 
+void AGenerator::SetSuperTriangle()
+{
+	
+	float maxX = 0.f;
+	float minX = 0.f;
+	float maxY = 0.f;
+	float minY = 0.f;
+	
+	
+	for (int i = 0; i < PointsArray.Num(); ++i)
+	{
+		minX = FMath::Min(minX, PointsArray[i].Room->GetActorLocation().X);
+		maxX = FMath::Max(maxX, PointsArray[i].Room->GetActorLocation().X);
+		minY = FMath::Min(minY, PointsArray[i].Room->GetActorLocation().Y);
+		maxY = FMath::Max(maxY, PointsArray[i].Room->GetActorLocation().Y);
+	}
+
+	float CenterX = (minX + maxX) / 2.f;
+	float Margin = (maxX - minX + maxY - minY);
+
+	FVector A = FVector(CenterX, maxY + Margin, 0.f);
+	FVector B = FVector(minX - Margin, minY - Margin, 0.f);
+	FVector C = FVector(maxX + Margin, minY - Margin, 0.f);
+
+	Point STA, STB, STC;
+	STA.Pos = A;
+	STB.Pos = B;
+	STC.Pos = C;
+
+	superTriangle.Points.Append({STA, STB, STC});
+
+	validatedTrianglesArray.Add(superTriangle);
+	trianglesArray.Add(superTriangle);
+
+	//Debug
+	ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, A, FRotator::ZeroRotator);
+	ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, B, FRotator::ZeroRotator);
+	ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, C, FRotator::ZeroRotator);
+
+	testA->SetActorScale3D(FVector(200, 200, 200));
+	testB->SetActorScale3D(FVector(200, 200, 200));
+	testC->SetActorScale3D(FVector(200, 200, 200));
+	//Debug
+}
+
+void AGenerator::DrawTriangles()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	
+	for (Triangle& T : trianglesArray)
+	{
+		ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[0].Pos, FRotator::ZeroRotator);
+		ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[1].Pos, FRotator::ZeroRotator);
+		ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[2].Pos, FRotator::ZeroRotator);
+
+		trianglesSummits.Append({testA, testB, testC});
+		
+		testA->SetActorScale3D(FVector(5, 5, 5));
+		testB->SetActorScale3D(FVector(5, 5, 5));
+		testC->SetActorScale3D(FVector(5, 5, 5));
+		
+		FVector A = FVector(T.Points[0].Pos.X,T.Points[0].Pos.Y, 5.0f);
+		FVector B = FVector(T.Points[1].Pos.X,T.Points[1].Pos.Y, 5.0f);
+		FVector C = FVector(T.Points[2].Pos.X,T.Points[2].Pos.Y, 5.0f);
+		
+		DrawDebugLine(World, A , B, FColor::Green,true, 100 , 0,200.f);
+		DrawDebugLine(World, B , C, FColor::Green,true, 100 , 0,200.f);
+		DrawDebugLine(World, A , C, FColor::Green,true, 100 , 0,200.f);
+		
+	}
+}
+
+//Clear
+void AGenerator::ClearRooms()
+{
+	for (int i = 0; i < roomsArray.Num(); i++)
+	{
+		roomsArray[i]->Destroy();
+	}
+}
+
+void AGenerator::ClearMajorRooms()
+{
+	for (int i = PointsArray.Num() - 1; i > 0; i--)
+	{
+		PointsArray[i].Room->Destroy();
+		PointsArray.RemoveAt(i);
+	}
+}
+
+void AGenerator::ClearMinorRooms()
+{
+	for (int i = 0; i < minorRooms.Num(); i++)
+	{
+		minorRooms[i]->Destroy();
+	}
+}
+
+void AGenerator::ClearTriangles()
+{
+	for (int i = 0; i < trianglesSummits.Num(); ++i)
+	{
+		trianglesSummits[i]->Destroy();
+	}
+	trianglesArray.Empty();
+	trianglesSummits.Empty();
+	FlushPersistentDebugLines(GetWorld());
+}
+
+void AGenerator::ClearBadSuperTriangles()
+{
+	TArray<FVector> superTrianglePoints;
+	superTrianglePoints.Append({superTriangle.Points[0].Pos, superTriangle.Points[1].Pos, superTriangle.Points[2].Pos});
+	
+	for (int i = 0; i < trianglesArray.Num(); ++i)
+	{
+		TArray<FVector> trianglePoints;
+		trianglePoints.Append({trianglesArray[i].Points[0].Pos, trianglesArray[i].Points[1].Pos, trianglesArray[i].Points[2].Pos});
+
+		bool isSuperTrianglePoint = false;
+		
+		for (int j = 0; j < trianglePoints.Num(); ++j)
+		{
+			for (int k = 0; k < superTrianglePoints.Num(); ++k)
+			{
+				if (trianglePoints[j] == superTrianglePoints[k])
+				{
+					trianglesArray.RemoveAt(i);
+					isSuperTrianglePoint = true;
+					i--;
+					break;
+				}				
+			}
+			if (isSuperTrianglePoint)
+			{
+				break;
+			}
+		}
+	}	
+
+	DrawTriangles();
+}
+
+// Calc Triangulation
+FVector AGenerator::RandomPointInDisk(float radius)
+{
+	const float Angle = FMath::FRandRange(0.f, 2.f * PI);
+	const float r = radius * FMath::Sqrt(FMath::FRand());
+	const float x = r * FMath::Cos(Angle);
+	const float y = r * FMath::Sin(Angle);
+	return FVector(x, y, 0.f);
+}
+
 void AGenerator::SeparateRooms()
 {
 	if (roomsArray.Num() <= 1) return;
@@ -72,15 +255,15 @@ void AGenerator::SeparateRooms()
 
         for (int32 i = 0; i < roomsArray.Num(); ++i)
         {
-            AActor* A = roomsArray[i];
+            ARoom* A = roomsArray[i];
             if (!IsValid(A)) continue;
 
             FVector CenterA, ExtentA;
-            A->GetActorBounds(/*bOnlyCollidingComponents*/ false, CenterA, ExtentA);
+            A->GetActorBounds(false, CenterA, ExtentA);
 
             for (int32 j = i + 1; j < roomsArray.Num(); ++j)
             {
-                AActor* B = roomsArray[j];
+                ARoom* B = roomsArray[j];
                 if (!IsValid(B)) continue;
 
                 FVector CenterB, ExtentB;
@@ -117,36 +300,82 @@ void AGenerator::SeparateRooms()
     }
 }
 
-FVector AGenerator::RandomPointInDisk(float radius)
+void AGenerator::Triangulation()
 {
-	const float Angle = FMath::FRandRange(0.f, 2.f * PI);
-	const float r = radius * FMath::Sqrt(FMath::FRand());
-	const float x = r * FMath::Cos(Angle);
-	const float y = r * FMath::Sin(Angle);
-	return FVector(x, y, 0.f);
+	for (int i = 0; i < PointsArray.Num(); i++)
+	{
+		// 1) Triangles invalides
+		TArray<Triangle> BadTriangles;
+		for (Triangle& T : trianglesArray)
+		{
+			// Cercles circonscrit qui englobent le p courant 
+			if (T.IsPointInPointCircumCircle(PointsArray[i].Room->GetActorLocation()))
+			{
+				BadTriangles.Add(T);
+			}
+		}
+
+		// 2) Arêtes frontières
+		TArray<Edge> Polygon;
+		for (Triangle& T : BadTriangles)
+		{
+			// chaque triangle = 3 arêtes
+			Edge E1, E2, E3 ;
+			E1.A = T.Points[0];
+			E1.B = T.Points[1];
+			E2.A = T.Points[1];
+			E2.B = T.Points[2];
+			E3.A = T.Points[2];
+			E3.B = T.Points[0];
+			
+			TArray<Edge> Edges;
+			Edges.Append({E1,E2,E3});
+
+			for (int k = 0; k < 3; k++)
+			{
+				Edge E = Edges[k];
+
+				// test si E est partagée par un autre bad triangle
+				bool bShared = false;
+				for (Triangle& Other : BadTriangles)
+				{
+					if (&T == &Other) continue;
+					if (Other.HasEdge(E)) 
+					{
+						bShared = true;
+						break;
+					}
+				}
+
+				if (!bShared)
+					Polygon.Add(E); // E est frontière
+			}
+		}
+
+		// 3) On supprime les bad triangles
+		for (Triangle& T : BadTriangles)
+		{
+			trianglesArray.RemoveSingle(T);
+		}
+
+		// 4) On crée les nouveaux triangles avec P
+		for (Edge& E : Polygon)
+		{
+			Triangle triangleToAdd;
+
+			triangleToAdd.Points.Append({E.A, E.B, PointsArray[i]});
+			
+			trianglesArray.Add(triangleToAdd);
+		}
+	}
+	ClearBadSuperTriangles();
 }
 
-void AGenerator::ClearRooms()
-{
-	for (int i = 0; i < roomsArray.Num(); i++)
-	{
-		roomsArray[i]->Destroy();
-	}
-}
+// Lane Prim Algorithm
 
-void AGenerator::ClearMajorRooms()
-{
-	for (int i = 0; i < majorRooms.Num(); i++)
-	{
-		majorRooms[i]->Destroy();
-	}
-}
 
-void AGenerator::ClearMinorRooms()
-{
-	for (int i = 0; i < minorRooms.Num(); i++)
-	{
-		minorRooms[i]->Destroy();
-	}
-}
+
+
+
+
 
