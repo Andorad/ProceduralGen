@@ -8,9 +8,9 @@
 //#include "RenderGraphBuilder.inl"
 bool Triangle::IsPointInPointCircumCircle(FVector P)
 {
-	FVector Pos1 = Points[0].Room->GetActorLocation();
-	FVector Pos2 = Points[1].Room->GetActorLocation();
-	FVector Pos3 = Points[2].Room->GetActorLocation();
+	FVector Pos1 = Points[0]->Room->GetActorLocation();
+	FVector Pos2 = Points[1]->Room->GetActorLocation();
+	FVector Pos3 = Points[2]->Room->GetActorLocation();
 	
 	double ax = Pos1.X - P.X;
 	double ay = Pos1.Y - P.Y;
@@ -72,17 +72,21 @@ void AGenerator::SpawnRoomsInRadius()
 				majorRooms.Add(Room);
 				Room->SetColor(MajorMat);
 				
-				Point point;
-				point.Room = Room;
-				point.Pos = Room->GetActorLocation();
-				point.Room->isMajor = true;
-
+				Point* point = new Point();
+				point->Room = Room;
+				point->Pos = Room->GetActorLocation();
+				point->Room->isMajor = true;
 				PointsArray.Add(point);
 			}
 			else
 			{
 				minorRooms.Add(Room);
 				Room->SetColor(SecondaryMat);
+				Point* point= new Point();
+				point->Room = Room;
+				point->Pos = Room->GetActorLocation();
+				point->Room->isMajor = false;
+				PointsArray.Add(point);
 			}
 
 			roomsArray.Add(Room);
@@ -93,18 +97,18 @@ void AGenerator::SpawnRoomsInRadius()
 void AGenerator::SetSuperTriangle()
 {
 	
-	float maxX = 0.f;
-	float minX = 0.f;
-	float maxY = 0.f;
-	float minY = 0.f;
+	float maxX = TNumericLimits<float>::Lowest();
+	float minX = TNumericLimits<float>::Max();
+	float maxY = TNumericLimits<float>::Lowest();
+	float minY = TNumericLimits<float>::Max();
 	
 	
 	for (int i = 0; i < PointsArray.Num(); ++i)
 	{
-		minX = FMath::Min(minX, PointsArray[i].Room->GetActorLocation().X);
-		maxX = FMath::Max(maxX, PointsArray[i].Room->GetActorLocation().X);
-		minY = FMath::Min(minY, PointsArray[i].Room->GetActorLocation().Y);
-		maxY = FMath::Max(maxY, PointsArray[i].Room->GetActorLocation().Y);
+		minX = FMath::Min(minX, PointsArray[i]->Room->GetActorLocation().X);
+		maxX = FMath::Max(maxX, PointsArray[i]->Room->GetActorLocation().X);
+		minY = FMath::Min(minY, PointsArray[i]->Room->GetActorLocation().Y);
+		maxY = FMath::Max(maxY, PointsArray[i]->Room->GetActorLocation().Y);
 	}
 
 	float CenterX = (minX + maxX) / 2.f;
@@ -114,20 +118,27 @@ void AGenerator::SetSuperTriangle()
 	FVector B = FVector(minX - Margin, minY - Margin, 0.f);
 	FVector C = FVector(maxX + Margin, minY - Margin, 0.f);
 
-	Point STA, STB, STC;
-	STA.Pos = A;
-	STB.Pos = B;
-	STC.Pos = C;
+	Point* STA = new Point();
+	Point* STB = new Point();
+	Point* STC = new Point();
+	STA->Pos = A;
+	STB->Pos = B;
+	STC->Pos = C;
+	
+	ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, A, FRotator::ZeroRotator);
+	ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, B, FRotator::ZeroRotator);
+	ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, C, FRotator::ZeroRotator);
 
+	STA->Room = testA;
+	STB->Room = testB;
+	STC->Room = testC;
+	
 	superTriangle.Points.Append({STA, STB, STC});
-
 	validatedTrianglesArray.Add(superTriangle);
 	trianglesArray.Add(superTriangle);
 
 	//Debug
-	ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, A, FRotator::ZeroRotator);
-	ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, B, FRotator::ZeroRotator);
-	ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, C, FRotator::ZeroRotator);
+	
 
 	testA->SetActorScale3D(FVector(200, 200, 200));
 	testB->SetActorScale3D(FVector(200, 200, 200));
@@ -143,9 +154,9 @@ void AGenerator::DrawTriangles()
 	
 	for (Triangle& T : trianglesArray)
 	{
-		ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[0].Pos, FRotator::ZeroRotator);
-		ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[1].Pos, FRotator::ZeroRotator);
-		ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[2].Pos, FRotator::ZeroRotator);
+		ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[0]->Pos, FRotator::ZeroRotator);
+		ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[1]->Pos, FRotator::ZeroRotator);
+		ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[2]->Pos, FRotator::ZeroRotator);
 
 		trianglesSummits.Append({testA, testB, testC});
 		
@@ -153,9 +164,9 @@ void AGenerator::DrawTriangles()
 		testB->SetActorScale3D(FVector(5, 5, 5));
 		testC->SetActorScale3D(FVector(5, 5, 5));
 		
-		FVector A = FVector(T.Points[0].Pos.X,T.Points[0].Pos.Y, 5.0f);
-		FVector B = FVector(T.Points[1].Pos.X,T.Points[1].Pos.Y, 5.0f);
-		FVector C = FVector(T.Points[2].Pos.X,T.Points[2].Pos.Y, 5.0f);
+		FVector A = FVector(T.Points[0]->Pos.X,T.Points[0]->Pos.Y, 5.0f);
+		FVector B = FVector(T.Points[1]->Pos.X,T.Points[1]->Pos.Y, 5.0f);
+		FVector C = FVector(T.Points[2]->Pos.X,T.Points[2]->Pos.Y, 5.0f);
 		
 		DrawDebugLine(World, A , B, FColor::Green,true, 100 , 0,200.f);
 		DrawDebugLine(World, B , C, FColor::Green,true, 100 , 0,200.f);
@@ -177,7 +188,7 @@ void AGenerator::ClearMajorRooms()
 {
 	for (int i = PointsArray.Num() - 1; i > 0; i--)
 	{
-		PointsArray[i].Room->Destroy();
+		PointsArray[i]->Room->Destroy();
 		PointsArray.RemoveAt(i);
 	}
 }
@@ -204,12 +215,12 @@ void AGenerator::ClearTriangles()
 void AGenerator::ClearBadSuperTriangles()
 {
 	TArray<FVector> superTrianglePoints;
-	superTrianglePoints.Append({superTriangle.Points[0].Pos, superTriangle.Points[1].Pos, superTriangle.Points[2].Pos});
+	superTrianglePoints.Append({superTriangle.Points[0]->Pos, superTriangle.Points[1]->Pos, superTriangle.Points[2]->Pos});
 	
 	for (int i = 0; i < trianglesArray.Num(); ++i)
 	{
 		TArray<FVector> trianglePoints;
-		trianglePoints.Append({trianglesArray[i].Points[0].Pos, trianglesArray[i].Points[1].Pos, trianglesArray[i].Points[2].Pos});
+		trianglePoints.Append({trianglesArray[i].Points[0]->Pos, trianglesArray[i].Points[1]->Pos, trianglesArray[i].Points[2]->Pos});
 
 		bool isSuperTrianglePoint = false;
 		
@@ -309,7 +320,7 @@ void AGenerator::Triangulation()
 		for (Triangle& T : trianglesArray)
 		{
 			// Cercles circonscrit qui englobent le p courant 
-			if (T.IsPointInPointCircumCircle(PointsArray[i].Room->GetActorLocation()))
+			if (T.IsPointInPointCircumCircle(PointsArray[i]->Room->GetActorLocation()))
 			{
 				BadTriangles.Add(T);
 			}

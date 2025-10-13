@@ -6,6 +6,9 @@
 #include "GameFramework/Actor.h"
 #include <Room.h>
 #include "Generator.generated.h"
+
+struct Edge; 
+
 struct Point
 {
 	FVector Pos;
@@ -15,10 +18,11 @@ struct Point
 
 struct Edge
 {
-	Point A, B;
+	Point* A;
+	Point* B;
 	bool operator==(const Edge& Other)  const
 	{
-		return (A.Pos == Other.A.Pos && B.Pos == Other.B.Pos || (A.Pos == Other.B.Pos && B.Pos == Other.A.Pos));
+		return (A->Pos == Other.A->Pos && B->Pos == Other.B->Pos || (A->Pos == Other.B->Pos && B->Pos == Other.A->Pos));
 	}
 };
 
@@ -26,7 +30,7 @@ struct Edge
 
 struct Triangle
 {
-	TArray<Point> Points;
+	TArray<Point*> Points;
 	//FVector pointA, pointB, pointC;
 	bool IsPointInPointCircumCircle(FVector P) ;
 	bool HasEdge(const Edge& E) const
@@ -36,7 +40,7 @@ struct Triangle
 
 	bool operator== (const Triangle& Other) const
 	{
-		return Points[0].Pos == Other.Points[0].Pos && Points[1].Pos == Other.Points[1].Pos && Points[2].Pos == Other.Points[2].Pos;
+		return Points[0]->Pos == Other.Points[0]->Pos && Points[1]->Pos == Other.Points[1]->Pos && Points[2]->Pos == Other.Points[2]->Pos;
 	}
 	
 };
@@ -85,7 +89,7 @@ public:
 	
 	void DrawTriangles();
 
-	void ConstructPointArray();
+	//void ConstructPointArray();
 
 	
 
@@ -121,7 +125,7 @@ public:
 	TArray<Triangle> validatedTrianglesArray;
 	TArray<Triangle> trianglesArray;
 
-	TArray<Point> PointsArray;
+	TArray<Point*> PointsArray;
 
 	TArray<ARoom*> trianglesSummits;
 
