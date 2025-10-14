@@ -5,44 +5,9 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include <Room.h>
+#include "DungeonTypes.h"
 #include "Generator.generated.h"
 
-struct Edge; 
-
-struct Point
-{
-	FVector Pos;
-	ARoom* Room;
-	TArray<Edge*> Edges;
-};
-
-struct Edge
-{
-	Point* A;
-	Point* B;
-	bool operator==(const Edge& Other)  const
-	{
-		return (A == Other.A && B == Other.B || (A == Other.B && B == Other.A));
-	}
-};
-
-
-
-struct Triangle
-{
-	TArray<Point*> Points;
-	bool IsPointInPointCircumCircle(FVector P) ;
-	bool HasEdge(const Edge& E) const
-	{
-		return (Edge{Points[0],Points[1]} == E) || (Edge{Points[1],Points[2]} == E) || (Edge{Points[2],Points[0]} == E);
-	}
-
-	bool operator== (const Triangle& Other) const
-	{
-		return Points[0] == Other.Points[0] && Points[1] == Other.Points[1] && Points[2] == Other.Points[2];
-	}
-	
-};
 UCLASS()
 class PROCEDURALGEN_API AGenerator : public AActor
 {
@@ -88,26 +53,16 @@ public:
 	UFUNCTION(CallInEditor, Category = "Triangulation")
 	void Triangulation();
 
-
-
-	void DeleteBadSuperTriangles();
-	
-	void DrawTriangles();
-
-	void ReasignPointPosition();
-
-	void AddEdgeToPointNoDup(Point* P, Edge* E);
+	TArray<Triangle> CollectBadTriangles(int i);
+	TArray<Edge> ExtractFrontierEdges();
 
 	Edge* FindOrCreateEdge(Point* A, Point* B);
 
-	bool PointHasEdge(Point* P, Edge* E);
+	void DeleteBadSuperTriangles();
+	
+	void DrawEdges();
 
-	static bool SameUndirected(const Edge* E, const Point* A, const Point* B)
-	{
-		return ( (E->A == A && E->B == B) || (E->A == B && E->B == A) );
-	}
-
-	Point* MakePoint(bool isMajor, ARoom* room);
+	void ReasignPointPosition();
 
 	static FVector RandomPointInDisk(float radius);
 
@@ -141,6 +96,8 @@ public:
 
 	TArray<Edge*> AllEdges;
 
+	TArray<Triangle> BadTriangles;
+
 	TArray<Point*> PointsArray;
 
 	TArray<ARoom*> trianglesSummits;
@@ -148,6 +105,7 @@ public:
 
 	Triangle superTriangle;
 
+	DungeonTypes DungeonFunction = DungeonTypes();
 };
 
 

@@ -3,25 +3,8 @@
 
 #include "Generator.h"
 
+#include "StaticMeshAttributes.h"
 #include "Kismet/KismetMathLibrary.h"
-
-//#include "RenderGraphBuilder.inl"
-bool Triangle::IsPointInPointCircumCircle(FVector P)
-{
-	double ax = Points[0]->Pos.X - P.X;
-	double ay = Points[0]->Pos.Y - P.Y;
-	double bx = Points[1]->Pos.X - P.X;
-	double by = Points[1]->Pos.Y - P.Y;
-	double cx = Points[2]->Pos.X - P.X;
-	double cy = Points[2]->Pos.Y - P.Y;
-
-	double det = (ax * ax + ay * ay) * (bx * cy - cx * by)
-				- (bx * bx + by * by) * (ax * cy - cx * ay)
-				+ (cx * cx + cy * cy) * (ax * by - bx * ay);
-
-	return det > 0.0;
-}
-
 
 // Sets default values
 AGenerator::AGenerator()
@@ -47,6 +30,7 @@ void AGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	
 	ClearTriangles();
 	ClearRooms();
+	
 }
 
 // Called every frame
@@ -84,8 +68,7 @@ void AGenerator::SpawnRoomsInRadius()
 			
 			Room->SetColor(bIsMajor ? MajorMat : SecondaryMat);
 			Room->isMajor = bIsMajor;
-			
-			Point* point = MakePoint(bIsMajor, Room);
+			Point* point =  DungeonFunction.MakePoint(bIsMajor, Room);
 			PointsArray.Add(point);
 			roomsArray.Add(Room);
 		}
@@ -124,47 +107,27 @@ void AGenerator::SetSuperTriangle()
 	if (summitB) DebugRooms.Add(summitB);
 	if (summitC) DebugRooms.Add(summitC);
 
-	Point* STA =MakePoint(true, summitA);
-	Point* STB =MakePoint(true, summitB);
-	Point* STC =MakePoint(true, summitC);
+	Point* STA = DungeonFunction.MakePoint(true, summitA);
+	Point* STB = DungeonFunction.MakePoint(true, summitB);
+	Point* STC = DungeonFunction.MakePoint(true, summitC);
 	
 	superTriangle.Points.Append({STA, STB, STC});
 	validatedTrianglesArray.Add(superTriangle);
 	trianglesArray.Add(superTriangle);
-
-	//Debug
-	//summitA->SetActorScale3D(FVector(200, 200, 200));
-	//summitB->SetActorScale3D(FVector(200, 200, 200));
-	//summitC->SetActorScale3D(FVector(200, 200, 200));
-	//Debug
 }
 
-void AGenerator::DrawTriangles()
+void AGenerator::DrawEdges()
 {
 	UWorld* World = GetWorld();
 	if (!World) return;
-
-	
-	for (Triangle& T : trianglesArray)
+	for (Edge* E : AllEdges)
 	{
-		ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[0]->Pos, FRotator::ZeroRotator);
-		ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[1]->Pos, FRotator::ZeroRotator);
-		ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, T.Points[2]->Pos, FRotator::ZeroRotator);
+		if (!E || !E->A || !E->B) continue;
 
-		trianglesSummits.Append({testA, testB, testC});
-		
-		testA->SetActorScale3D(FVector(5, 5, 5));
-		testB->SetActorScale3D(FVector(5, 5, 5));
-		testC->SetActorScale3D(FVector(5, 5, 5));
-		
-		FVector A = FVector(T.Points[0]->Pos.X,T.Points[0]->Pos.Y, 5.0f);
-		FVector B = FVector(T.Points[1]->Pos.X,T.Points[1]->Pos.Y, 5.0f);
-		FVector C = FVector(T.Points[2]->Pos.X,T.Points[2]->Pos.Y, 5.0f);
-		
-		DrawDebugLine(World, A , B, FColor::Green,true, 100 , 0,200.f);
-		DrawDebugLine(World, B , C, FColor::Green,true, 100 , 0,200.f);
-		DrawDebugLine(World, A , C, FColor::Green,true, 100 , 0,200.f);
-		
+		const FVector A(E->A->Pos.X, E->A->Pos.Y, 5.f);
+		const FVector B(E->B->Pos.X, E->B->Pos.Y, 5.f);
+
+		DrawDebugLine(World, A, B, FColor::Green, /*bPersistent*/ true, /*LifeTime*/ 100.f, 0, /*Thickness*/ 200.f);
 	}
 }
 
@@ -196,20 +159,21 @@ void AGenerator::DeleteBadSuperTriangles()
 			Edge* E20 = FindOrCreateEdge(P2, P0);
 
 			// Attache chaque arête aux deux points (sans doublon)
-			AddEdgeToPointNoDup(P0, E01);
-			AddEdgeToPointNoDup(P1, E01);
+			DungeonFunction.AddEdgeToPointNoDup(P0, E01);
+			DungeonFunction.AddEdgeToPointNoDup(P1, E01);
 
-			AddEdgeToPointNoDup(P1, E12);
-			AddEdgeToPointNoDup(P2, E12);
+			DungeonFunction.AddEdgeToPointNoDup(P1, E12);
+			DungeonFunction.AddEdgeToPointNoDup(P2, E12);
 
-			AddEdgeToPointNoDup(P2, E20);
-			AddEdgeToPointNoDup(P0, E20);
+			DungeonFunction.AddEdgeToPointNoDup(P2, E20);
+			DungeonFunction.AddEdgeToPointNoDup(P0, E20);
 		}
 	}
-	DrawTriangles();
+	DrawEdges();
 	ClearSuperTriangle();
 }
-// Calc Triangulation
+
+
 FVector AGenerator::RandomPointInDisk(float radius)
 {
 	const float Angle = FMath::FRandRange(0.f, 2.f * PI);
@@ -287,7 +251,7 @@ Edge* AGenerator::FindOrCreateEdge(Point* A, Point* B)
 	if (!A || !B || A == B) return nullptr;
 	for (Edge* E : AllEdges)
 	{
-		if (SameUndirected(E, A, B))
+		if (DungeonFunction.SameUndirected(E, A, B))
 			return E; 
 	}
 	
@@ -297,32 +261,6 @@ Edge* AGenerator::FindOrCreateEdge(Point* A, Point* B)
 	AllEdges.Add(NewE);
 	return NewE;
 }
-bool AGenerator::PointHasEdge( Point* P, Edge* E)
-{
-	if (!P || !E) return false;
-	for ( Edge* Existing : P->Edges)
-	{
-		if (SameUndirected(Existing, E->A, E->B))
-			return true;
-	}
-	return false;
-}
-
-void AGenerator::AddEdgeToPointNoDup(Point* P, Edge* E)
-{
-	if (!P || !E) return;
-	if (!PointHasEdge(P, E))
-	{
-		P->Edges.Add(E);
-	}
-}
-Point* AGenerator::MakePoint(bool isMajor, ARoom* room)
-{
-	Point* point = new Point();
-	point->Room = room;
-	point->Pos = room->GetActorLocation();
-	return point;
-}
 
 void AGenerator::Triangulation()
 {
@@ -330,72 +268,75 @@ void AGenerator::Triangulation()
 	{
 		if (PointsArray[i]->Room->isMajor)
 		{
-			// 1) Triangles invalides
-			TArray<Triangle> BadTriangles;
-			for (Triangle& T : trianglesArray)
-			{
-				// Cercles circonscrit qui englobent le p courant 
-				if (T.IsPointInPointCircumCircle(PointsArray[i]->Pos))
-				{
-					BadTriangles.Add(T);
-				}
-			}
-
-			// 2) Arêtes frontières
-			TArray<Edge> Polygon;
-			for (Triangle& T : BadTriangles)
-			{
-				// chaque triangle = 3 arêtes
-				Edge E1, E2, E3 ;
-				E1.A = T.Points[0];
-				E1.B = T.Points[1];
-				E2.A = T.Points[1];
-				E2.B = T.Points[2];
-				E3.A = T.Points[2];
-				E3.B = T.Points[0];
+			BadTriangles = CollectBadTriangles(i) ;
+			TArray<Edge> Polygon = ExtractFrontierEdges();
 			
-				TArray<Edge> Edges;
-				Edges.Append({E1,E2,E3});
-
-				for (int k = 0; k < 3; k++)
-				{
-					Edge E = Edges[k];
-
-					// test si E est partagée par un autre bad triangle
-					bool bShared = false;
-					for (Triangle& Other : BadTriangles)
-					{
-						if (&T == &Other) continue;
-						if (Other.HasEdge(E)) 
-						{
-							bShared = true;
-							break;
-						}
-					}
-
-					if (!bShared)
-						Polygon.Add(E); // E est frontière
-				}
-			}
-
-			// 3) On supprime les bad triangles
 			for (Triangle& T : BadTriangles)
 			{
 				trianglesArray.RemoveSingle(T);
 			}
-
-			// 4) On crée les nouveaux triangles avec P
+			
 			for (Edge& E : Polygon)
 			{
 				Triangle triangleToAdd;
-
 				triangleToAdd.Points.Append({E.A, E.B, PointsArray[i]});
-			
 				trianglesArray.Add(triangleToAdd);
 			}
 		}
 	}
 	DeleteBadSuperTriangles();
+}
+
+TArray<Triangle> AGenerator::CollectBadTriangles(int i)
+{
+	TArray<Triangle> badTriangles;
+	for (Triangle& T : trianglesArray)
+	{
+		// Cercles circonscrit qui englobent le p courant 
+		if (T.IsPointInPointCircumCircle(PointsArray[i]->Pos))
+		{
+			badTriangles.Add(T);
+		}
+	}
+	return badTriangles;
+}
+
+TArray<Edge> AGenerator::ExtractFrontierEdges()
+{
+	TArray<Edge> Polygon;
+	for (Triangle& T : BadTriangles)
+	{
+		Edge E1, E2, E3 ;
+		E1.A = T.Points[0];
+		E1.B = T.Points[1];
+		E2.A = T.Points[1];
+		E2.B = T.Points[2];
+		E3.A = T.Points[2];
+		E3.B = T.Points[0];
+			
+		TArray<Edge> Edges;
+		Edges.Append({E1,E2,E3});
+
+		for (int k = 0; k < 3; k++)
+		{
+			Edge E = Edges[k];
+			
+			bool bShared = false;
+			for (Triangle& Other : BadTriangles)
+			{
+				if (&T == &Other) continue;
+				if (Other.HasEdge(E)) 
+				{
+					bShared = true;
+					break;
+				}
+			}
+
+			if (!bShared)
+				Polygon.Add(E);
+		}
+	}
+	return Polygon;
 }
 
 // Lane Prim Algorithm
@@ -409,6 +350,7 @@ void AGenerator::ClearAll()
 	ClearTriangles();
 	ClearRooms();
 }
+
 void AGenerator::ClearRooms()
 {
 	for (int i = 0; i < roomsArray.Num(); i++)
@@ -424,7 +366,6 @@ void AGenerator::ClearRooms()
 	superTriangle.Points.Empty();
 }
 
-
 void AGenerator::ClearTriangles()
 {
 	ClearSuperTriangle();
@@ -438,8 +379,6 @@ void AGenerator::ClearTriangles()
 	for (Point* P : PointsArray) { if (P) P->Edges.Empty(); }
 	trianglesArray.Empty();
 	trianglesSummits.Empty();
-
-	
 	
 	FlushPersistentDebugLines(GetWorld());
 }
