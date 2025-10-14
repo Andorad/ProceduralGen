@@ -15,20 +15,33 @@
  	FVector Pos;
  	ARoom* Room;
  	TArray<Edge*> Edges;
+ 	bool bVisited = false;
  };
  
  struct Edge
  {
  	Point* A;
  	Point* B;
+ 	float weight = 0.f;
+ 	void UpdateLength()
+ 	{
+ 		weight = FVector::Dist2D(A ? A->Pos : FVector::ZeroVector,
+								  B ? B->Pos : FVector::ZeroVector);
+ 	}
  	bool operator==(const Edge& Other)  const
  	{
  		return (A == Other.A && B == Other.B || (A == Other.B && B == Other.A));
  	}
  };
- 
- 
- 
+
+struct FMstEntry
+{
+	Edge*  E   = nullptr;
+	Point* From = nullptr;   // côté déjà visité
+	Point* To   = nullptr;   // côté non visité
+	float  Weight    = 0.f;       // poids (longueur)
+};
+
  struct Triangle
  {
  	TArray<Point*> Points;
@@ -57,6 +70,7 @@ public:
 	}
 
 	Point* MakePoint(bool isMajor, ARoom* room);
+	FMstEntry MakeEntry(Edge* E, Point* From, Point* To,float Weight);
 	bool PointHasEdge(Point* P, Edge* E);
 	void AddEdgeToPointNoDup(Point* P, Edge* E);
 	

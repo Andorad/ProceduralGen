@@ -64,6 +64,12 @@ public:
 
 	void ReasignPointPosition();
 
+	void PrimAlgorithm();
+
+	Point* SelectRandomMajorPoint();
+
+	void PushPathPossibility(Point* current);
+
 	static FVector RandomPointInDisk(float radius);
 
 	int roomNumber = 100;
@@ -99,11 +105,16 @@ public:
 	TArray<Triangle> BadTriangles;
 
 	TArray<Point*> PointsArray;
+	TArray<Point*> MajorPoints;
 
 	TArray<ARoom*> trianglesSummits;
 	TArray<ARoom*> DebugRooms;
 
+	TArray<FMstEntry> CandidateEdges;
+
 	Triangle superTriangle;
+
+	TArray<Edge*> MSTEdges;
 
 	DungeonTypes DungeonFunction = DungeonTypes();
 };

@@ -34,7 +34,15 @@ Point* DungeonTypes::MakePoint(bool isMajor, ARoom* room)
 	point->Pos = room->GetActorLocation();
 	return point;
 }
-
+FMstEntry DungeonTypes::MakeEntry(Edge* E, Point* From, Point* To,float Weight)
+{
+	FMstEntry Ent;
+	Ent.E    = E;
+	Ent.From = From;
+	Ent.To   = To;
+	Ent.Weight  = (E->weight > 0.f) ? E->weight : FVector::Dist2D(From->Pos, To->Pos);
+	return Ent;
+}
 void DungeonTypes::AddEdgeToPointNoDup(Point* P, Edge* E)
 {
 	if (!P || !E) return;
@@ -54,3 +62,4 @@ bool DungeonTypes::PointHasEdge( Point* P, Edge* E)
 	}
 	return false;
 }
+
