@@ -39,7 +39,7 @@ struct Triangle
 
 	bool operator== (const Triangle& Other) const
 	{
-		return Points[0]->Pos == Other.Points[0]->Pos && Points[1]->Pos == Other.Points[1]->Pos && Points[2]->Pos == Other.Points[2]->Pos;
+		return Points[0] == Other.Points[0] && Points[1] == Other.Points[1] && Points[2] == Other.Points[2];
 	}
 	
 };
@@ -55,11 +55,15 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
 
 public:	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	
+	UFUNCTION(CallInEditor, Category = "Dungeon")
+	void MakeDungeon();
+
 	UFUNCTION(CallInEditor, Category = "Custom")
 	void SpawnRoomsInRadius();
 
@@ -67,10 +71,16 @@ public:
 	void SeparateRooms();
 
 	UFUNCTION(CallInEditor, Category = "Clear")
+	void ClearAll();
+
+	UFUNCTION(CallInEditor, Category = "Clear")
 	void ClearRooms();
 
 	UFUNCTION(CallInEditor, Category = "Clear")
-	void ClearPointsRooms();
+	void ClearSuperTriangle();
+
+	UFUNCTION(CallInEditor, Category = "Clear")
+	void ClearTriangles();
 
 	UFUNCTION(CallInEditor, Category = "Triangulation")
 	void SetSuperTriangle();
@@ -78,8 +88,7 @@ public:
 	UFUNCTION(CallInEditor, Category = "Triangulation")
 	void Triangulation();
 
-	UFUNCTION(CallInEditor, Category = "Clear")
-	void ClearTriangles();
+
 
 	void DeleteBadSuperTriangles();
 	
@@ -135,6 +144,7 @@ public:
 	TArray<Point*> PointsArray;
 
 	TArray<ARoom*> trianglesSummits;
+	TArray<ARoom*> DebugRooms;
 
 	Triangle superTriangle;
 

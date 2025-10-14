@@ -37,12 +37,30 @@ void AGenerator::BeginPlay()
 	
 	SpawnRoomsInRadius();
 	SeparateRooms();
+	SetSuperTriangle();
+	Triangulation();
+}
+
+void AGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+	
+	ClearTriangles();
+	ClearRooms();
 }
 
 // Called every frame
 void AGenerator::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+}
+
+void AGenerator::MakeDungeon()
+{
+	SpawnRoomsInRadius();
+	SeparateRooms();
+	SetSuperTriangle();
+	Triangulation();
 }
 
 // Spawns Rooms Points and Triangles
@@ -97,22 +115,27 @@ void AGenerator::SetSuperTriangle()
 	FVector B = FVector(minX - Margin, minY - Margin, 0.f);
 	FVector C = FVector(maxX + Margin, minY - Margin, 0.f);
 	
-	ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, A, FRotator::ZeroRotator);
-	ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, B, FRotator::ZeroRotator);
-	ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, C, FRotator::ZeroRotator);
+	ARoom* summitA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, A, FRotator::ZeroRotator);
+	ARoom* summitB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, B, FRotator::ZeroRotator);
+	ARoom* summitC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, C, FRotator::ZeroRotator);
 
-	Point* STA =MakePoint(true, testA);
-	Point* STB =MakePoint(true, testB);
-	Point* STC =MakePoint(true, testC);
+	// track debug actors
+	if (summitA) DebugRooms.Add(summitA);
+	if (summitB) DebugRooms.Add(summitB);
+	if (summitC) DebugRooms.Add(summitC);
+
+	Point* STA =MakePoint(true, summitA);
+	Point* STB =MakePoint(true, summitB);
+	Point* STC =MakePoint(true, summitC);
 	
 	superTriangle.Points.Append({STA, STB, STC});
 	validatedTrianglesArray.Add(superTriangle);
 	trianglesArray.Add(superTriangle);
 
 	//Debug
-	testA->SetActorScale3D(FVector(200, 200, 200));
-	testB->SetActorScale3D(FVector(200, 200, 200));
-	testC->SetActorScale3D(FVector(200, 200, 200));
+	//summitA->SetActorScale3D(FVector(200, 200, 200));
+	//summitB->SetActorScale3D(FVector(200, 200, 200));
+	//summitC->SetActorScale3D(FVector(200, 200, 200));
 	//Debug
 }
 
@@ -149,18 +172,14 @@ void AGenerator::DeleteBadSuperTriangles()
 {
 	TArray<FVector> superTrianglePoints;
 	superTrianglePoints.Append({superTriangle.Points[0]->Pos, superTriangle.Points[1]->Pos, superTriangle.Points[2]->Pos});
+	
 	for (int32 i = trianglesArray.Num() - 1; i >= 0; --i)
 	{
-		const bool isBadTriangle = trianglesArray[i].Points[0]->Pos == superTriangle.Points[0]->Pos ||
-			trianglesArray[i].Points[0]->Pos == superTriangle.Points[1]->Pos ||
-			trianglesArray[i].Points[0]->Pos == superTriangle.Points[2]->Pos ||
-			trianglesArray[i].Points[1]->Pos == superTriangle.Points[0]->Pos||
-			trianglesArray[i].Points[1]->Pos == superTriangle.Points[1]->Pos ||
-			trianglesArray[i].Points[1]->Pos == superTriangle.Points[2]->Pos||
-			trianglesArray[i].Points[2]->Pos == superTriangle.Points[0]->Pos ||
-			trianglesArray[i].Points[2]->Pos == superTriangle.Points[1]->Pos || 
-			trianglesArray[i].Points[2]->Pos == superTriangle.Points[2]->Pos;
-
+		const bool isBadTriangle =
+			trianglesArray[i].Points.Contains(superTriangle.Points[0]) ||
+			trianglesArray[i].Points.Contains(superTriangle.Points[1]) ||
+			trianglesArray[i].Points.Contains(superTriangle.Points[2]);
+		
 		if (isBadTriangle)
 		{
 			trianglesArray.RemoveAtSwap(i);
@@ -188,6 +207,7 @@ void AGenerator::DeleteBadSuperTriangles()
 		}
 	}
 	DrawTriangles();
+	ClearSuperTriangle();
 }
 // Calc Triangulation
 FVector AGenerator::RandomPointInDisk(float radius)
@@ -383,33 +403,60 @@ void AGenerator::Triangulation()
 
 
 //Clear
+
+void AGenerator::ClearAll()
+{
+	ClearTriangles();
+	ClearRooms();
+}
 void AGenerator::ClearRooms()
 {
 	for (int i = 0; i < roomsArray.Num(); i++)
 	{
 		roomsArray[i]->Destroy();
 	}
-}
-
-void AGenerator::ClearPointsRooms()
-{
-	for (int i = PointsArray.Num() - 1; i > 0; i--)
+	for (int i = PointsArray.Num() - 1; i >= 0; i--)
 	{
 		PointsArray[i]->Room->Destroy();
 		PointsArray.RemoveAt(i);
 	}
+	for (Point* P : superTriangle.Points) { delete P; }
+	superTriangle.Points.Empty();
 }
+
 
 void AGenerator::ClearTriangles()
 {
+	ClearSuperTriangle();
+	
 	for (int i = 0; i < trianglesSummits.Num(); ++i)
 	{
 		trianglesSummits[i]->Destroy();
 	}
+	for (Edge* E : AllEdges) { delete E; }
+	AllEdges.Empty();
+	for (Point* P : PointsArray) { if (P) P->Edges.Empty(); }
 	trianglesArray.Empty();
 	trianglesSummits.Empty();
+
+	
+	
 	FlushPersistentDebugLines(GetWorld());
 }
 
+void AGenerator::ClearSuperTriangle()
+{
+	for (Point* P : superTriangle.Points)
+	{
+		delete P; 
+	}
+	superTriangle.Points.Empty();
+	for (ARoom* R : DebugRooms)
+	{
+		if (IsValid(R)) R->Destroy();
+	}
+	DebugRooms.Empty();
+	superTriangle.Points.Reset();
+}
 
 
