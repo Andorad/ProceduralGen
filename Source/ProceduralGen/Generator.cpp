@@ -8,16 +8,12 @@
 //#include "RenderGraphBuilder.inl"
 bool Triangle::IsPointInPointCircumCircle(FVector P)
 {
-	FVector Pos1 = Points[0]->Room->GetActorLocation();
-	FVector Pos2 = Points[1]->Room->GetActorLocation();
-	FVector Pos3 = Points[2]->Room->GetActorLocation();
-	
-	double ax = Pos1.X - P.X;
-	double ay = Pos1.Y - P.Y;
-	double bx = Pos2.X - P.X;
-	double by = Pos2.Y - P.Y;
-	double cx = Pos3.X - P.X;
-	double cy = Pos3.Y - P.Y;
+	double ax = Points[0]->Pos.X - P.X;
+	double ay = Points[0]->Pos.Y - P.Y;
+	double bx = Points[1]->Pos.X - P.X;
+	double by = Points[1]->Pos.Y - P.Y;
+	double cx = Points[2]->Pos.X - P.X;
+	double cy = Points[2]->Pos.Y - P.Y;
 
 	double det = (ax * ax + ay * ay) * (bx * cy - cx * by)
 				- (bx * bx + by * by) * (ax * cy - cx * ay)
@@ -32,7 +28,6 @@ AGenerator::AGenerator()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-
 }
 
 // Called when the game starts or when spawned
@@ -66,29 +61,14 @@ void AGenerator::SpawnRoomsInRadius()
 		if (Room)
 		{
 			Room->SetActorScale3D(FVector(rdmX, rdmY, 1.f));
-
-			if (rdmX * rdmY > areaLimit) 
-			{
-				majorRooms.Add(Room);
-				Room->SetColor(MajorMat);
-				
-				Point* point = new Point();
-				point->Room = Room;
-				point->Pos = Room->GetActorLocation();
-				point->Room->isMajor = true;
-				PointsArray.Add(point);
-			}
-			else
-			{
-				minorRooms.Add(Room);
-				Room->SetColor(SecondaryMat);
-				Point* point= new Point();
-				point->Room = Room;
-				point->Pos = Room->GetActorLocation();
-				point->Room->isMajor = false;
-				PointsArray.Add(point);
-			}
-
+			
+			const bool bIsMajor = (rdmX * rdmY > areaLimit);
+			
+			Room->SetColor(bIsMajor ? MajorMat : SecondaryMat);
+			Room->isMajor = bIsMajor;
+			
+			Point* point = MakePoint(bIsMajor, Room);
+			PointsArray.Add(point);
 			roomsArray.Add(Room);
 		}
 	}
@@ -96,7 +76,6 @@ void AGenerator::SpawnRoomsInRadius()
 
 void AGenerator::SetSuperTriangle()
 {
-	
 	float maxX = TNumericLimits<float>::Lowest();
 	float minX = TNumericLimits<float>::Max();
 	float maxY = TNumericLimits<float>::Lowest();
@@ -105,10 +84,10 @@ void AGenerator::SetSuperTriangle()
 	
 	for (int i = 0; i < PointsArray.Num(); ++i)
 	{
-		minX = FMath::Min(minX, PointsArray[i]->Room->GetActorLocation().X);
-		maxX = FMath::Max(maxX, PointsArray[i]->Room->GetActorLocation().X);
-		minY = FMath::Min(minY, PointsArray[i]->Room->GetActorLocation().Y);
-		maxY = FMath::Max(maxY, PointsArray[i]->Room->GetActorLocation().Y);
+		minX = FMath::Min(minX, PointsArray[i]->Pos.X);
+		maxX = FMath::Max(maxX, PointsArray[i]->Pos.X);
+		minY = FMath::Min(minY, PointsArray[i]->Pos.Y);
+		maxY = FMath::Max(maxY, PointsArray[i]->Pos.Y);
 	}
 
 	float CenterX = (minX + maxX) / 2.f;
@@ -117,29 +96,20 @@ void AGenerator::SetSuperTriangle()
 	FVector A = FVector(CenterX, maxY + Margin, 0.f);
 	FVector B = FVector(minX - Margin, minY - Margin, 0.f);
 	FVector C = FVector(maxX + Margin, minY - Margin, 0.f);
-
-	Point* STA = new Point();
-	Point* STB = new Point();
-	Point* STC = new Point();
-	STA->Pos = A;
-	STB->Pos = B;
-	STC->Pos = C;
 	
 	ARoom* testA = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, A, FRotator::ZeroRotator);
 	ARoom* testB = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, B, FRotator::ZeroRotator);
 	ARoom* testC = GetWorld()->SpawnActor<ARoom>(RoomToSpawn, C, FRotator::ZeroRotator);
 
-	STA->Room = testA;
-	STB->Room = testB;
-	STC->Room = testC;
+	Point* STA =MakePoint(true, testA);
+	Point* STB =MakePoint(true, testB);
+	Point* STC =MakePoint(true, testC);
 	
 	superTriangle.Points.Append({STA, STB, STC});
 	validatedTrianglesArray.Add(superTriangle);
 	trianglesArray.Add(superTriangle);
 
 	//Debug
-	
-
 	testA->SetActorScale3D(FVector(200, 200, 200));
 	testB->SetActorScale3D(FVector(200, 200, 200));
 	testC->SetActorScale3D(FVector(200, 200, 200));
@@ -175,77 +145,50 @@ void AGenerator::DrawTriangles()
 	}
 }
 
-//Clear
-void AGenerator::ClearRooms()
-{
-	for (int i = 0; i < roomsArray.Num(); i++)
-	{
-		roomsArray[i]->Destroy();
-	}
-}
-
-void AGenerator::ClearMajorRooms()
-{
-	for (int i = PointsArray.Num() - 1; i > 0; i--)
-	{
-		PointsArray[i]->Room->Destroy();
-		PointsArray.RemoveAt(i);
-	}
-}
-
-void AGenerator::ClearMinorRooms()
-{
-	for (int i = 0; i < minorRooms.Num(); i++)
-	{
-		minorRooms[i]->Destroy();
-	}
-}
-
-void AGenerator::ClearTriangles()
-{
-	for (int i = 0; i < trianglesSummits.Num(); ++i)
-	{
-		trianglesSummits[i]->Destroy();
-	}
-	trianglesArray.Empty();
-	trianglesSummits.Empty();
-	FlushPersistentDebugLines(GetWorld());
-}
-
-void AGenerator::ClearBadSuperTriangles()
+void AGenerator::DeleteBadSuperTriangles()
 {
 	TArray<FVector> superTrianglePoints;
 	superTrianglePoints.Append({superTriangle.Points[0]->Pos, superTriangle.Points[1]->Pos, superTriangle.Points[2]->Pos});
-	
-	for (int i = 0; i < trianglesArray.Num(); ++i)
+	for (int32 i = trianglesArray.Num() - 1; i >= 0; --i)
 	{
-		TArray<FVector> trianglePoints;
-		trianglePoints.Append({trianglesArray[i].Points[0]->Pos, trianglesArray[i].Points[1]->Pos, trianglesArray[i].Points[2]->Pos});
+		const bool isBadTriangle = trianglesArray[i].Points[0]->Pos == superTriangle.Points[0]->Pos ||
+			trianglesArray[i].Points[0]->Pos == superTriangle.Points[1]->Pos ||
+			trianglesArray[i].Points[0]->Pos == superTriangle.Points[2]->Pos ||
+			trianglesArray[i].Points[1]->Pos == superTriangle.Points[0]->Pos||
+			trianglesArray[i].Points[1]->Pos == superTriangle.Points[1]->Pos ||
+			trianglesArray[i].Points[1]->Pos == superTriangle.Points[2]->Pos||
+			trianglesArray[i].Points[2]->Pos == superTriangle.Points[0]->Pos ||
+			trianglesArray[i].Points[2]->Pos == superTriangle.Points[1]->Pos || 
+			trianglesArray[i].Points[2]->Pos == superTriangle.Points[2]->Pos;
 
-		bool isSuperTrianglePoint = false;
-		
-		for (int j = 0; j < trianglePoints.Num(); ++j)
+		if (isBadTriangle)
 		{
-			for (int k = 0; k < superTrianglePoints.Num(); ++k)
-			{
-				if (trianglePoints[j] == superTrianglePoints[k])
-				{
-					trianglesArray.RemoveAt(i);
-					isSuperTrianglePoint = true;
-					i--;
-					break;
-				}				
-			}
-			if (isSuperTrianglePoint)
-			{
-				break;
-			}
+			trianglesArray.RemoveAtSwap(i);
 		}
-	}	
+		else
+		{
+			Point* P0 = trianglesArray[i].Points[0];
+			Point* P1 = trianglesArray[i].Points[1];
+			Point* P2 = trianglesArray[i].Points[2];
 
+			// Crée/récupère les arêtes non orientées du triangle
+			Edge* E01 = FindOrCreateEdge(P0, P1);
+			Edge* E12 = FindOrCreateEdge(P1, P2);
+			Edge* E20 = FindOrCreateEdge(P2, P0);
+
+			// Attache chaque arête aux deux points (sans doublon)
+			AddEdgeToPointNoDup(P0, E01);
+			AddEdgeToPointNoDup(P1, E01);
+
+			AddEdgeToPointNoDup(P1, E12);
+			AddEdgeToPointNoDup(P2, E12);
+
+			AddEdgeToPointNoDup(P2, E20);
+			AddEdgeToPointNoDup(P0, E20);
+		}
+	}
 	DrawTriangles();
 }
-
 // Calc Triangulation
 FVector AGenerator::RandomPointInDisk(float radius)
 {
@@ -287,106 +230,186 @@ void AGenerator::SeparateRooms()
                 if (dx > 0.f && dy > 0.f) // overlap détecté
                 {
                 	const FVector Delta = FVector(CenterB.X - CenterA.X, CenterB.Y - CenterA.Y, 0.f);
-                	const FVector Dir = Delta.GetSafeNormal(); // A -> B
-
-                	if (!Dir.IsNearlyZero())
+                	
+                	FVector Dir = Delta.GetSafeNormal();
+                	if (Dir.IsNearlyZero())
                 	{
-                		float Move = 0.5f * FMath::Min(dx, dy);
-                		
-                		Move *= FMath::FRandRange(0.95f, 1.05f);
-                		
-                		A->SetActorLocation(A->GetActorLocation() - Dir * Move, /*bSweep*/ false);
-                		B->SetActorLocation(B->GetActorLocation() + Dir * Move, /*bSweep*/ false);
-                		
-                		A->GetActorBounds(false, CenterA, ExtentA);
-
-                		bAnyMoved = true;
+                		Dir = FVector(FMath::FRandRange(-1.f, 1.f), FMath::FRandRange(-1.f, 1.f), 0.f).GetSafeNormal();
                 	}
+
+                	float Move = 0.5f * FMath::Min(dx, dy) * FMath::FRandRange(0.95f, 1.05f);
+                	A->AddActorWorldOffset(- Dir * Move, false);
+                	B->AddActorWorldOffset(Dir * Move,  false);
+
+                	A->GetActorBounds(false, CenterA, ExtentA);
+                	bAnyMoved = true;
                 }
             }
         }
-
+		
         if (!bAnyMoved)
-           break; // plus d'overlap
+           break; 
     }
+
+	ReasignPointPosition();
+}
+
+void AGenerator::ReasignPointPosition()
+{
+	for (Point* P: PointsArray)
+	{
+		P->Pos = P->Room->GetActorLocation();
+	}
+}
+
+Edge* AGenerator::FindOrCreateEdge(Point* A, Point* B)
+{
+	if (!A || !B || A == B) return nullptr;
+	for (Edge* E : AllEdges)
+	{
+		if (SameUndirected(E, A, B))
+			return E; 
+	}
+	
+	Edge* NewE = new Edge();
+	NewE->A = A;
+	NewE->B = B;
+	AllEdges.Add(NewE);
+	return NewE;
+}
+bool AGenerator::PointHasEdge( Point* P, Edge* E)
+{
+	if (!P || !E) return false;
+	for ( Edge* Existing : P->Edges)
+	{
+		if (SameUndirected(Existing, E->A, E->B))
+			return true;
+	}
+	return false;
+}
+
+void AGenerator::AddEdgeToPointNoDup(Point* P, Edge* E)
+{
+	if (!P || !E) return;
+	if (!PointHasEdge(P, E))
+	{
+		P->Edges.Add(E);
+	}
+}
+Point* AGenerator::MakePoint(bool isMajor, ARoom* room)
+{
+	Point* point = new Point();
+	point->Room = room;
+	point->Pos = room->GetActorLocation();
+	return point;
 }
 
 void AGenerator::Triangulation()
 {
 	for (int i = 0; i < PointsArray.Num(); i++)
 	{
-		// 1) Triangles invalides
-		TArray<Triangle> BadTriangles;
-		for (Triangle& T : trianglesArray)
+		if (PointsArray[i]->Room->isMajor)
 		{
-			// Cercles circonscrit qui englobent le p courant 
-			if (T.IsPointInPointCircumCircle(PointsArray[i]->Room->GetActorLocation()))
+			// 1) Triangles invalides
+			TArray<Triangle> BadTriangles;
+			for (Triangle& T : trianglesArray)
 			{
-				BadTriangles.Add(T);
-			}
-		}
-
-		// 2) Arêtes frontières
-		TArray<Edge> Polygon;
-		for (Triangle& T : BadTriangles)
-		{
-			// chaque triangle = 3 arêtes
-			Edge E1, E2, E3 ;
-			E1.A = T.Points[0];
-			E1.B = T.Points[1];
-			E2.A = T.Points[1];
-			E2.B = T.Points[2];
-			E3.A = T.Points[2];
-			E3.B = T.Points[0];
-			
-			TArray<Edge> Edges;
-			Edges.Append({E1,E2,E3});
-
-			for (int k = 0; k < 3; k++)
-			{
-				Edge E = Edges[k];
-
-				// test si E est partagée par un autre bad triangle
-				bool bShared = false;
-				for (Triangle& Other : BadTriangles)
+				// Cercles circonscrit qui englobent le p courant 
+				if (T.IsPointInPointCircumCircle(PointsArray[i]->Pos))
 				{
-					if (&T == &Other) continue;
-					if (Other.HasEdge(E)) 
-					{
-						bShared = true;
-						break;
-					}
+					BadTriangles.Add(T);
 				}
-
-				if (!bShared)
-					Polygon.Add(E); // E est frontière
 			}
-		}
 
-		// 3) On supprime les bad triangles
-		for (Triangle& T : BadTriangles)
-		{
-			trianglesArray.RemoveSingle(T);
-		}
-
-		// 4) On crée les nouveaux triangles avec P
-		for (Edge& E : Polygon)
-		{
-			Triangle triangleToAdd;
-
-			triangleToAdd.Points.Append({E.A, E.B, PointsArray[i]});
+			// 2) Arêtes frontières
+			TArray<Edge> Polygon;
+			for (Triangle& T : BadTriangles)
+			{
+				// chaque triangle = 3 arêtes
+				Edge E1, E2, E3 ;
+				E1.A = T.Points[0];
+				E1.B = T.Points[1];
+				E2.A = T.Points[1];
+				E2.B = T.Points[2];
+				E3.A = T.Points[2];
+				E3.B = T.Points[0];
 			
-			trianglesArray.Add(triangleToAdd);
+				TArray<Edge> Edges;
+				Edges.Append({E1,E2,E3});
+
+				for (int k = 0; k < 3; k++)
+				{
+					Edge E = Edges[k];
+
+					// test si E est partagée par un autre bad triangle
+					bool bShared = false;
+					for (Triangle& Other : BadTriangles)
+					{
+						if (&T == &Other) continue;
+						if (Other.HasEdge(E)) 
+						{
+							bShared = true;
+							break;
+						}
+					}
+
+					if (!bShared)
+						Polygon.Add(E); // E est frontière
+				}
+			}
+
+			// 3) On supprime les bad triangles
+			for (Triangle& T : BadTriangles)
+			{
+				trianglesArray.RemoveSingle(T);
+			}
+
+			// 4) On crée les nouveaux triangles avec P
+			for (Edge& E : Polygon)
+			{
+				Triangle triangleToAdd;
+
+				triangleToAdd.Points.Append({E.A, E.B, PointsArray[i]});
+			
+				trianglesArray.Add(triangleToAdd);
+			}
 		}
 	}
-	ClearBadSuperTriangles();
+	DeleteBadSuperTriangles();
 }
 
 // Lane Prim Algorithm
 
 
 
+//Clear
+void AGenerator::ClearRooms()
+{
+	for (int i = 0; i < roomsArray.Num(); i++)
+	{
+		roomsArray[i]->Destroy();
+	}
+}
 
+void AGenerator::ClearPointsRooms()
+{
+	for (int i = PointsArray.Num() - 1; i > 0; i--)
+	{
+		PointsArray[i]->Room->Destroy();
+		PointsArray.RemoveAt(i);
+	}
+}
+
+void AGenerator::ClearTriangles()
+{
+	for (int i = 0; i < trianglesSummits.Num(); ++i)
+	{
+		trianglesSummits[i]->Destroy();
+	}
+	trianglesArray.Empty();
+	trianglesSummits.Empty();
+	FlushPersistentDebugLines(GetWorld());
+}
 
 
 

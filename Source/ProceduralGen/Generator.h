@@ -13,7 +13,7 @@ struct Point
 {
 	FVector Pos;
 	ARoom* Room;
-	//TArray<Edge> Edges;
+	TArray<Edge*> Edges;
 };
 
 struct Edge
@@ -22,7 +22,7 @@ struct Edge
 	Point* B;
 	bool operator==(const Edge& Other)  const
 	{
-		return (A->Pos == Other.A->Pos && B->Pos == Other.B->Pos || (A->Pos == Other.B->Pos && B->Pos == Other.A->Pos));
+		return (A == Other.A && B == Other.B || (A == Other.B && B == Other.A));
 	}
 };
 
@@ -31,7 +31,6 @@ struct Edge
 struct Triangle
 {
 	TArray<Point*> Points;
-	//FVector pointA, pointB, pointC;
 	bool IsPointInPointCircumCircle(FVector P) ;
 	bool HasEdge(const Edge& E) const
 	{
@@ -71,10 +70,7 @@ public:
 	void ClearRooms();
 
 	UFUNCTION(CallInEditor, Category = "Clear")
-	void ClearMajorRooms();
-
-	UFUNCTION(CallInEditor, Category = "Clear")
-	void ClearMinorRooms();
+	void ClearPointsRooms();
 
 	UFUNCTION(CallInEditor, Category = "Triangulation")
 	void SetSuperTriangle();
@@ -85,13 +81,24 @@ public:
 	UFUNCTION(CallInEditor, Category = "Clear")
 	void ClearTriangles();
 
-	void ClearBadSuperTriangles();
+	void DeleteBadSuperTriangles();
 	
 	void DrawTriangles();
 
-	//void ConstructPointArray();
+	void ReasignPointPosition();
 
-	
+	void AddEdgeToPointNoDup(Point* P, Edge* E);
+
+	Edge* FindOrCreateEdge(Point* A, Point* B);
+
+	bool PointHasEdge(Point* P, Edge* E);
+
+	static bool SameUndirected(const Edge* E, const Point* A, const Point* B)
+	{
+		return ( (E->A == A && E->B == B) || (E->A == B && E->B == A) );
+	}
+
+	Point* MakePoint(bool isMajor, ARoom* room);
 
 	static FVector RandomPointInDisk(float radius);
 
@@ -110,8 +117,6 @@ public:
 	float padding = 300.f;
 	int32 maxIteration = 1000.f;
 
-	TArray<ARoom*> majorRooms;
-	TArray<ARoom*> minorRooms;
 	TArray<ARoom*> roomsArray;
 
 	UPROPERTY(EditAnywhere, Category="Spawn")
@@ -124,6 +129,8 @@ public:
 
 	TArray<Triangle> validatedTrianglesArray;
 	TArray<Triangle> trianglesArray;
+
+	TArray<Edge*> AllEdges;
 
 	TArray<Point*> PointsArray;
 
