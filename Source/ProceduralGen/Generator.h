@@ -26,97 +26,140 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	
-	UFUNCTION(CallInEditor, Category = "Dungeon")
+	UFUNCTION(CallInEditor, Category = "Dungeon|MainFunction")
 	void MakeDungeon();
 
-	UFUNCTION(CallInEditor, Category = "Custom")
+	UFUNCTION(CallInEditor, Category = "Dungeon|Custom")
 	void SpawnRoomsInRadius();
 
-	UFUNCTION(CallInEditor, Category = "Custom")
+	UFUNCTION(CallInEditor, Category = "Dungeon|Custom")
 	void SeparateRooms();
 
-	UFUNCTION(CallInEditor, Category = "Clear")
+	UFUNCTION(CallInEditor, Category = "Dungeon|MainFunction")
 	void ClearAll();
 
-	UFUNCTION(CallInEditor, Category = "Clear")
+	UFUNCTION(CallInEditor, Category = "Dungeon|ClearDetails")
 	void ClearRooms();
 
-	UFUNCTION(CallInEditor, Category = "Clear")
+	UFUNCTION(CallInEditor, Category = "Dungeon|ClearDetails")
 	void ClearSuperTriangle();
 
-	UFUNCTION(CallInEditor, Category = "Clear")
+	UFUNCTION(CallInEditor, Category = "Dungeon|ClearDetails")
 	void ClearTriangles();
 
-	UFUNCTION(CallInEditor, Category = "Triangulation")
+	UFUNCTION(CallInEditor, Category = "Dungeon|Triangulation")
 	void SetSuperTriangle();
 
-	UFUNCTION(CallInEditor, Category = "Triangulation")
+	UFUNCTION(CallInEditor, Category = "Dungeon|Triangulation")
 	void Triangulation();
 
+	UPROPERTY(EditAnywhere, Category="Dungeon|Corridor")
+	float CorridorThickness = 200.f; // épaisseur visuelle des lignes debug
+
+	UPROPERTY(EditAnywhere, Category="Dungeon|Corridor")
+	float CorridorZ = 8.f; // hauteur des lignes debug au-dessus du sol
+
+	UPROPERTY(EditAnywhere, Category="Dungeon|Corridor")
+	bool bRandomHorizontalFirst = true; // pour varier le L
+
+	UPROPERTY(EditAnywhere, Category="Dungeon|Corridor")
+	TSubclassOf<ARoom> CorridorToSpawn; // mesh rectangulaire (même BP que RoomToSpawn si tu veux)
+
+	UPROPERTY(EditAnywhere, Category="Dungeon|Corridor")
+	float CorridorWidth = 600.f;   // largeur visuelle du couloir (axe Y du mesh)
+
+	UPROPERTY(EditAnywhere, Category="Dungeon|Corridor")
+	float CorridorZSpawn = 0.f;    // hauteur du sol pour les couloirs (0 si tes rooms sont à Z=0)
+
+	UPROPERTY(VisibleAnywhere, Category="Dungeon|Corridor")
+	USceneComponent* CorridorsRoot = nullptr;
+
+	UPROPERTY(VisibleAnywhere, Category="Dungeon|Corridor")
+	TArray<ARoom*> CorridorRooms;   
+
+	//Triangulation Function
 	TArray<Triangle> CollectBadTriangles(int i);
 	TArray<Edge> ExtractFrontierEdges();
-
 	Edge* FindOrCreateEdge(Point* A, Point* B);
-
 	void DeleteBadSuperTriangles();
-	
-	void DrawEdges();
-
 	void ReasignPointPosition();
 
+	// Prim Algoruithm
 	void PrimAlgorithm();
-
 	Point* SelectRandomMajorPoint();
-
 	void PushPathPossibility(Point* current);
-
 	static FVector RandomPointInDisk(float radius);
 
-	int roomNumber = 100;
+	// Corridors Functions
+	FVector DoorToward(const Point* From, const Point* Toward) const;
+	bool TryAlignedDoors(const Point* A, const Point* B, FVector& DoorA, FVector& DoorB) const;
+	void BuildCorridorsFromMST_Meshes();                   
+	void PlaceCorridorStraightMesh(const FVector& A, const FVector& B);
+	void PlaceCorridorLMesh(const FVector& A, const FVector& B, bool HorizontalFirst);
+	ARoom* SpawnCorridorSegment(const FVector& A, const FVector& B);
+	void EnsureCorridorBaseExtents() const;
+	void RemoveMinorRoomsOutOfDungeon(float CorridorPad);
 
+	int roomNumber = 100;
 	float minSizeX = 10.f;
 	float minSizeY = 10.f;
 
-	float maxSizeX = 50.f;
-	float maxSizeY = 50.f;
+	float maxSizeX = 100.f;
+	float maxSizeY = 100.f;
 
+	UPROPERTY(EditAnywhere, Category="Dungeon|Spawn")
 	float areaLimit = 900.f;
-
+	UPROPERTY(EditAnywhere, Category="Dungeon|Spawn")
+	TSubclassOf<ARoom> RoomToSpawn;
+	UPROPERTY(EditAnywhere, Category = "Dungeon|Spawn")
+	UMaterialInterface* MajorMat;
+	UPROPERTY(EditAnywhere, Category = "Dungeon|Spawn")
+	UMaterialInterface* SecondaryMat;
+	
 	float initialSpawnRadius = 300.f;
-
 	float padding = 300.f;
 	int32 maxIteration = 1000.f;
 
+	mutable float BaseHalfX = -1.f;
+	mutable float BaseHalfY = -1.f;
+
+	// Arrays
 	TArray<ARoom*> roomsArray;
-
-	UPROPERTY(EditAnywhere, Category="Spawn")
-	TSubclassOf<ARoom> RoomToSpawn;
-
-	UPROPERTY(EditAnywhere, Category = "Spawn")
-	UMaterialInterface* MajorMat;
-	UPROPERTY(EditAnywhere, Category = "Spawn")
-	UMaterialInterface* SecondaryMat;
-
-	TArray<Triangle> validatedTrianglesArray;
-	TArray<Triangle> trianglesArray;
-
-	TArray<Edge*> AllEdges;
-
-	TArray<Triangle> BadTriangles;
-
-	TArray<Point*> PointsArray;
-	TArray<Point*> MajorPoints;
-
 	TArray<ARoom*> trianglesSummits;
 	TArray<ARoom*> DebugRooms;
-
+	TArray<Triangle> trianglesArray;
+	TArray<Triangle> BadTriangles;
+	TArray<Point*> PointsArray;
+	TArray<Point*> MajorPoints;
 	TArray<FMstEntry> CandidateEdges;
-
-	Triangle superTriangle;
-
 	TArray<Edge*> MSTEdges;
-
+	TArray<Edge*> AllEdges;
+	
+	Triangle superTriangle;
 	DungeonTypes DungeonFunction = DungeonTypes();
+
+	//Statics Functions
+	static bool Intersect1D(float a0, float a1, float b0, float b1, float& OutMid, float& OutLen)
+	{
+		const float lo = FMath::Max(a0, b0);
+		const float hi = FMath::Min(a1, b1);
+		OutLen = hi - lo;
+		if (OutLen > 0.f)
+		{
+			OutMid = 0.5f * (lo + hi);
+			return true;
+		}
+		return false;
+	}
+
+	static FBox MakeActorBox(AActor* A, float Pad = 0.f)
+	{
+		FVector C, E;
+		if (!IsValid(A)) return FBox(ForceInit);
+		A->GetActorBounds(false, C, E);
+		if (Pad > 0.f) E += FVector(Pad);
+		return FBox(C - E, C + E);
+	}
 };
 
 

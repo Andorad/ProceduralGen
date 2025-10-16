@@ -11,19 +11,21 @@ ARoom::ARoom()
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
     PrimaryActorTick.bCanEverTick = false;
 
-    CubeMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CubeMesh"));
-    RootComponent = CubeMesh;
+	
 
-    CubeMesh->SetMobility(EComponentMobility::Movable);
-    CubeMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    CubeMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+    PlaneMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PlaneMesh"));
+    RootComponent = PlaneMesh;
 
-    CubeMesh->SetSimulatePhysics(false);
-    CubeMesh->SetEnableGravity(false);
+    PlaneMesh->SetMobility(EComponentMobility::Movable);
+    PlaneMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    PlaneMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+
+    PlaneMesh->SetSimulatePhysics(false);
+    PlaneMesh->SetEnableGravity(false);
 
 }
 
 void ARoom::SetColor(UMaterialInterface* mat)
 {
-    CubeMesh->SetMaterial(0, mat);
+    PlaneMesh->SetMaterial(0, mat);
 }

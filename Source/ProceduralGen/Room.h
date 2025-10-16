@@ -18,8 +18,9 @@ public:
 public:
 	void SetColor(UMaterialInterface* _mat);
 	
+
 	UPROPERTY(EditAnywhere)
-	UStaticMeshComponent* CubeMesh;
+	UStaticMeshComponent* PlaneMesh;
 
 	UMaterialInstanceDynamic* DynamicMaterial;
 

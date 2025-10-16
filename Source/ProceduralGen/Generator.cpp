@@ -38,6 +38,7 @@ void AGenerator::Tick(float DeltaTime)
 
 void AGenerator::MakeDungeon()
 {
+	ClearAll();
 	SpawnRoomsInRadius();
 	SeparateRooms();
 	SetSuperTriangle();
@@ -60,7 +61,7 @@ void AGenerator::SpawnRoomsInRadius()
 
 		if (Room)
 		{
-			Room->SetActorScale3D(FVector(rdmX, rdmY, 1.f));
+			Room->SetActorScale3D(FVector(rdmX, rdmY, 0.1f));
 			
 			const bool bIsMajor = (rdmX * rdmY > areaLimit);
 			
@@ -69,6 +70,7 @@ void AGenerator::SpawnRoomsInRadius()
 			Point* point =  DungeonFunction.MakePoint(bIsMajor, Room);
 			
 			if (bIsMajor)MajorPoints.Add(point);
+			
 			PointsArray.Add(point);
 			roomsArray.Add(Room);
 		}
@@ -166,7 +168,6 @@ void AGenerator::SetSuperTriangle()
 	Point* STC = DungeonFunction.MakePoint(true, summitC);
 	
 	superTriangle.Points.Append({STA, STB, STC});
-	validatedTrianglesArray.Add(superTriangle);
 	trianglesArray.Add(superTriangle);
 }
 
@@ -178,6 +179,8 @@ FVector AGenerator::RandomPointInDisk(float radius)
 	const float y = r * FMath::Sin(Angle);
 	return FVector(x, y, 0.f);
 }
+
+
 
 void AGenerator::ReasignPointPosition()
  {
@@ -211,7 +214,6 @@ void AGenerator::Triangulation()
 		}
 	}
 	DeleteBadSuperTriangles();
-	DrawEdges();
 	ClearSuperTriangle();
 }
 
@@ -321,21 +323,6 @@ Edge* AGenerator::FindOrCreateEdge(Point* A, Point* B)
 	return NewE;
 }
 
-void AGenerator::DrawEdges()
-{
-	UWorld* World = GetWorld();
-	if (!World) return;
-	for (Edge* E : AllEdges)
-	{
-		if (!E || !E->A || !E->B) continue;
-
-		const FVector A(E->A->Pos.X, E->A->Pos.Y, 5.f);
-		const FVector B(E->B->Pos.X, E->B->Pos.Y, 5.f);
-
-		//DrawDebugLine(World, A, B, FColor::Green, true,  100.f, 0,200.f);
-	}
-}
-
 void AGenerator::PushPathPossibility(Point* current)
 {
 	for (Edge* E : current->Edges)
@@ -416,17 +403,9 @@ void AGenerator::PrimAlgorithm()
         current = Best.To;
 		PushPathPossibility(current);
     }
-	
-    if (UWorld* World = GetWorld())
-    {
-        for (Edge* E : MSTEdges)
-        {
-            if (!E || !E->A || !E->B) continue;
-            const FVector A(E->A->Pos.X, E->A->Pos.Y, 10.f);
-            const FVector B(E->B->Pos.X, E->B->Pos.Y, 10.f);
-            DrawDebugLine(World, A, B, FColor::Green, true, 60.f, 0, 200.f);
-        }
-    }
+
+	BuildCorridorsFromMST_Meshes();
+	RemoveMinorRoomsOutOfDungeon(/*CorridorPad=*/8.f);
 }
 
 Point* AGenerator::SelectRandomMajorPoint()
@@ -438,7 +417,90 @@ Point* AGenerator::SelectRandomMajorPoint()
 	return MajorPoints[start];
 
 }
+//Corridor Generation
 
+FVector AGenerator::DoorToward(const Point* From, const Point* Toward) const
+{
+	check(From && From->Room && Toward && Toward->Room);
+
+	FVector CenterA, ExtentA;
+	From->Room->GetActorBounds(false, CenterA, ExtentA);
+
+	FVector CenterB, ExtentB;
+	Toward->Room->GetActorBounds(false, CenterB, ExtentB);
+
+	const FVector Delta = CenterB - CenterA;
+	FVector Out = CenterA;
+
+	const bool AlignedX = FMath::Abs(Delta.Y) <= (ExtentA.Y + ExtentB.Y) * 0.25f;
+	const bool AlignedY = FMath::Abs(Delta.X) <= (ExtentA.X + ExtentB.X) * 0.25f;
+
+	if (AlignedX)
+	{
+		// Aligned horizontally exit along X
+		Out.X = CenterA.X + FMath::Sign(Delta.X) * ExtentA.X;
+		Out.Y = CenterA.Y; // keep centered vertically
+	}
+	else if (AlignedY)
+	{
+		// Aligned vertically exit along Y
+		Out.Y = CenterA.Y + FMath::Sign(Delta.Y) * ExtentA.Y;
+		Out.X = CenterA.X; // keep centered horizontally
+	}
+	else
+	{
+		// Not aligned use dominant axis (classic behaviour)
+		if (FMath::Abs(Delta.X) >= FMath::Abs(Delta.Y))
+		{
+			// Exit through the +X or -X face, and clamp Y within the room’s horizontal bounds.
+			Out.X = CenterA.X + FMath::Sign(Delta.X) * ExtentA.X;
+			Out.Y = FMath::Clamp(CenterB.Y, CenterA.Y - ExtentA.Y + 5.f, CenterA.Y + ExtentA.Y - 5.f);
+		}
+		else
+		{
+			// Exit through the +Y or -Y face, and clamp X within the room’s vertical bounds.
+			Out.Y = CenterA.Y + FMath::Sign(Delta.Y) * ExtentA.Y;
+			Out.X = FMath::Clamp(CenterB.X, CenterA.X - ExtentA.X + 5.f, CenterA.X + ExtentA.X - 5.f);
+		}
+	}
+
+	Out.Z = CenterA.Z + CorridorZ;
+	return Out;
+}
+
+bool AGenerator::TryAlignedDoors(const Point* A, const Point* B, FVector& DoorA, FVector& DoorB) const
+{
+	check(A && A->Room && B && B->Room);
+
+	FVector CA, EA; A->Room->GetActorBounds(false, CA, EA);
+	FVector CB, EB; B->Room->GetActorBounds(false, CB, EB);
+
+	const float Eps = 5.f; 
+
+	// HTZ Corridors
+	float midY = 0.f, lenY = 0.f;
+	const bool overlapY = Intersect1D(CA.Y - EA.Y, CA.Y + EA.Y, CB.Y - EB.Y, CB.Y + EB.Y, midY, lenY);
+	if (overlapY && lenY >= CorridorThickness)
+	{
+		const bool AisLeft = (CB.X - CA.X) > 0.f;
+		DoorA = FVector(CA.X + (AisLeft ? +EA.X + Eps : -EA.X - Eps), midY, CA.Z + CorridorZ);
+		DoorB = FVector(CB.X + (AisLeft ? -EB.X - Eps : +EB.X + Eps), midY, CB.Z + CorridorZ);
+		return true; 
+	}
+
+	// Vertical Corridors 
+	float midX = 0.f, lenX = 0.f;
+	const bool overlapX = Intersect1D(CA.X - EA.X, CA.X + EA.X, CB.X - EB.X, CB.X + EB.X, midX, lenX);
+	if (overlapX && lenX >= CorridorThickness)
+	{
+		const bool AisBelow = (CB.Y - CA.Y) > 0.f;
+		DoorA = FVector(midX, CA.Y + (AisBelow ? +EA.Y + Eps : -EA.Y - Eps), CA.Z + CorridorZ);
+		DoorB = FVector(midX, CB.Y + (AisBelow ? -EB.Y - Eps : +EB.Y + Eps), CB.Z + CorridorZ);
+		return true; 
+	}
+
+	return false; 
+}
 
 //Clear
 void AGenerator::ClearAll()
@@ -494,4 +556,152 @@ void AGenerator::ClearSuperTriangle()
 	superTriangle.Points.Reset();
 }
 
+void AGenerator::EnsureCorridorBaseExtents() const
+{
+	if (BaseHalfX > 0.f && BaseHalfY > 0.f) return;
+	if (!CorridorToSpawn) return;
 
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	FActorSpawnParameters P; 
+	P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	P.bDeferConstruction = true;  // pas d’init visuelle
+	ARoom* Proto = World->SpawnActor<ARoom>(CorridorToSpawn, FVector::ZeroVector, FRotator::ZeroRotator, P);
+	if (!Proto) return;
+
+	FVector Center, Extent;
+	Proto->GetActorBounds(false, Center, Extent);
+
+	BaseHalfX = FMath::Max(1.f, Extent.X);
+	BaseHalfY = FMath::Max(1.f, Extent.Y);
+
+	Proto->Destroy();
+}
+
+
+void AGenerator::BuildCorridorsFromMST_Meshes()
+{
+	for (Edge* E : MSTEdges)
+	{
+		if (!E || !E->A || !E->B) continue;
+
+		FVector Adoor, Bdoor;
+
+		// 1) Essayer couloir droit parfait
+		if (TryAlignedDoors(E->A, E->B, Adoor, Bdoor))
+		{
+			PlaceCorridorStraightMesh(Adoor, Bdoor);
+			continue;
+		}
+
+		// 2) Sinon, fallback porte-bord + L si nécessaire
+		const FVector DA = DoorToward(E->A, E->B);
+		const FVector DB = DoorToward(E->B, E->A);
+
+		const bool SameX = FMath::IsNearlyEqual(DA.X, DB.X, 1.f);
+		const bool SameY = FMath::IsNearlyEqual(DA.Y, DB.Y, 1.f);
+
+		if (SameX || SameY)
+		{
+			PlaceCorridorStraightMesh(DA, DB);
+		}
+		else
+		{
+			const bool HorizontalFirst = bRandomHorizontalFirst ? FMath::RandBool() : true;
+			PlaceCorridorLMesh(DA, DB, HorizontalFirst);
+		}
+	}
+}
+
+void AGenerator::PlaceCorridorStraightMesh(const FVector& A, const FVector& B)
+{
+	SpawnCorridorSegment(A, B);
+}
+
+void AGenerator::PlaceCorridorLMesh(const FVector& A, const FVector& B, bool HorizontalFirst)
+{
+	const FVector Pivot = HorizontalFirst ? FVector(B.X, A.Y, A.Z) : FVector(A.X, B.Y, A.Z);
+
+	SpawnCorridorSegment(A, Pivot);
+	SpawnCorridorSegment(Pivot, B);
+
+	// Optionnel : petit “cap” carré au pivot (agrémente les coins)
+	// SpawnCorridorSegment(Pivot + FVector(-20,0,0), Pivot + FVector(+20,0,0)); etc.
+}
+
+ARoom* AGenerator::SpawnCorridorSegment(const FVector& A, const FVector& B)
+{
+	if (!CorridorToSpawn) return nullptr;
+	EnsureCorridorBaseExtents();
+
+	const FVector Mid = 0.5f * (A + B);
+	FVector Dir = (B - A); Dir.Z = 0.f;
+	const float Len = Dir.Size();
+	if (Len < KINDA_SMALL_NUMBER) return nullptr;
+
+	Dir.Normalize();
+	const FRotator Yaw = FRotationMatrix::MakeFromX(Dir).Rotator();
+
+	// scale (X = longueur, Y = largeur)
+	const float TargetHalfX = 0.5f * Len;
+	const float TargetHalfY = 0.5f * CorridorWidth;
+	const float SX = TargetHalfX / FMath::Max(1.f, BaseHalfX);
+	const float SY = TargetHalfY / FMath::Max(1.f, BaseHalfY);
+
+	FTransform T(Yaw, FVector(Mid.X, Mid.Y, CorridorZSpawn));
+	T.SetScale3D(FVector(SX, SY, 0.1f)); // Z fin comme tes rooms
+
+	FActorSpawnParameters P;
+	P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARoom* Seg = GetWorld()->SpawnActor<ARoom>(CorridorToSpawn, T, P);
+	if (!Seg) return nullptr;
+
+
+	// Parent dans le dossier Corridors + track dans la liste
+	if (CorridorsRoot) Seg->AttachToComponent(CorridorsRoot, FAttachmentTransformRules::KeepWorldTransform);
+	CorridorRooms.Add(Seg);
+	roomsArray.Add(Seg);
+
+	// (Facultatif) tag pour filtrer plus tard
+	Seg->Tags.Add(TEXT("Corridor"));
+
+	return Seg;
+}
+
+void AGenerator::RemoveMinorRoomsOutOfDungeon(float CorridorPad /*=8.f*/)
+{
+	TArray<FBox> CorridorBoxes;
+	CorridorBoxes.Reserve(CorridorRooms.Num());
+	for (ARoom* C : CorridorRooms)
+	{
+		if (!IsValid(C)) continue;
+		CorridorBoxes.Add(MakeActorBox(C, CorridorPad));
+	}
+
+	// Parcours des minor rooms (en arrière pour pouvoir remove)
+	for (int32 i = roomsArray.Num() - 1; i >= 0; --i)
+	{
+		ARoom* R = roomsArray[i];
+		if (!IsValid(R)) { roomsArray.RemoveAtSwap(i); continue; }
+
+		// On ne touche pas aux majors, ni aux couloirs déjà listés
+		if (R->isMajor || CorridorRooms.Contains(R) || R->Tags.Contains(TEXT("Corridor")))
+			continue;
+
+		// => c’est une MINOR room : garde-la seulement si elle intersecte un couloir
+		const FBox RB = MakeActorBox(R, /*Pad*/ 0.f);
+		bool bTouchesCorridor = false;
+
+		for (const FBox& CB : CorridorBoxes)
+		{
+			if (RB.Intersect(CB)) { bTouchesCorridor = true; break; }
+		}
+
+		if (!bTouchesCorridor)
+		{
+			R->Destroy();
+			roomsArray.RemoveAtSwap(i);
+		}
+	}
+}
