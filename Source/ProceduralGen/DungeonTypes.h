@@ -57,6 +57,8 @@ struct FMstEntry
  	}
  	
  };
+
+struct FRectToFill { FVector2D MinXY, MaxXY; float Z; };
  
 class PROCEDURALGEN_API DungeonTypes
 {

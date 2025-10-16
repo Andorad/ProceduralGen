@@ -42,6 +42,9 @@ public:
 	void ClearRooms();
 
 	UFUNCTION(CallInEditor, Category = "Dungeon|ClearDetails")
+	void ClearCorridors();
+
+	UFUNCTION(CallInEditor, Category = "Dungeon|ClearDetails")
 	void ClearSuperTriangle();
 
 	UFUNCTION(CallInEditor, Category = "Dungeon|ClearDetails")
@@ -71,20 +74,18 @@ public:
 	UPROPERTY(EditAnywhere, Category="Dungeon|Corridor")
 	float CorridorZSpawn = 0.f;    // hauteur du sol pour les couloirs (0 si tes rooms sont à Z=0)
 
-	UPROPERTY(VisibleAnywhere, Category="Dungeon|Corridor")
+	
 	USceneComponent* CorridorsRoot = nullptr;
-
-	UPROPERTY(VisibleAnywhere, Category="Dungeon|Corridor")
 	TArray<ARoom*> CorridorRooms;   
 
-	//Triangulation Function
+	//Triangulation Functions
 	TArray<Triangle> CollectBadTriangles(int i);
 	TArray<Edge> ExtractFrontierEdges();
 	Edge* FindOrCreateEdge(Point* A, Point* B);
 	void DeleteBadSuperTriangles();
 	void ReasignPointPosition();
 
-	// Prim Algoruithm
+	// Prim Algoruithm Functions
 	void PrimAlgorithm();
 	Point* SelectRandomMajorPoint();
 	void PushPathPossibility(Point* current);
@@ -100,6 +101,13 @@ public:
 	void EnsureCorridorBaseExtents() const;
 	void RemoveMinorRoomsOutOfDungeon(float CorridorPad);
 
+	// Filler Functions 
+	bool FillAxisGapBetween(AActor* A, AActor* B);
+	ARoom* SpawnRectFill(const FVector2D& MinXY, const FVector2D& MaxXY, float Z);
+	void BuildFillers();
+	bool ComputeAxisGapBetween(AActor* A, AActor* B, FRectToFill& OutRect);
+
+	
 	int roomNumber = 100;
 	float minSizeX = 10.f;
 	float minSizeY = 10.f;
@@ -134,9 +142,23 @@ public:
 	TArray<FMstEntry> CandidateEdges;
 	TArray<Edge*> MSTEdges;
 	TArray<Edge*> AllEdges;
+	TArray<ARoom*> FillerModules; 
 	
 	Triangle superTriangle;
 	DungeonTypes DungeonFunction = DungeonTypes();
+	
+	// Filler modules
+    UPROPERTY(EditAnywhere, Category="Dungeon|Filler")
+    TSubclassOf<ARoom> FillerToSpawn;       
+    UPROPERTY(EditAnywhere, Category="Dungeon|Filler")
+    float MaxFillGap = 120.f;               
+    UPROPERTY(EditAnywhere, Category="Dungeon|Filler")
+    float MinOverlapToFill = 80.f;          
+    UPROPERTY(EditAnywhere, Category="Dungeon|Filler")
+    float FillerZ = 0.f;
+    
+
+             
 
 	//Statics Functions
 	static bool Intersect1D(float a0, float a1, float b0, float b1, float& OutMid, float& OutLen)
@@ -159,6 +181,14 @@ public:
 		A->GetActorBounds(false, C, E);
 		if (Pad > 0.f) E += FVector(Pad);
 		return FBox(C - E, C + E);
+	}
+	
+	static void GetBox2D(AActor* Act, FVector2D& MinXY, FVector2D& MaxXY, float& Z)
+	{
+		FVector C, E; Act->GetActorBounds(false, C, E);
+		MinXY = FVector2D(C.X - E.X, C.Y - E.Y);
+		MaxXY = FVector2D(C.X + E.X, C.Y + E.Y);
+		Z = C.Z;
 	}
 };
 

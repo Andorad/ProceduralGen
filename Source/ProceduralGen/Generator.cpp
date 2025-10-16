@@ -25,8 +25,7 @@ void AGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 	
-	ClearTriangles();
-	ClearRooms();
+	ClearAll();
 	
 }
 
@@ -406,6 +405,7 @@ void AGenerator::PrimAlgorithm()
 
 	BuildCorridorsFromMST_Meshes();
 	RemoveMinorRoomsOutOfDungeon(/*CorridorPad=*/8.f);
+	BuildFillers();
 }
 
 Point* AGenerator::SelectRandomMajorPoint()
@@ -507,6 +507,7 @@ void AGenerator::ClearAll()
 {
 	ClearTriangles();
 	ClearRooms();
+	ClearCorridors();
 }
 
 void AGenerator::ClearRooms()
@@ -540,7 +541,56 @@ void AGenerator::ClearTriangles()
 	
 	FlushPersistentDebugLines(GetWorld());
 }
+void AGenerator::ClearCorridors()
+{
+	// 1) Détruire tout ce que nous avons explicitement tracké
+	auto DestroyArray = [](TArray<ARoom*>& Arr)
+	{
+		for (int32 i = Arr.Num() - 1; i >= 0; --i)
+		{
+			ARoom* R = Arr[i];
+			if (IsValid(R)) R->Destroy();
+			Arr.RemoveAtSwap(i);
+		}
+	};
 
+	DestroyArray(CorridorRooms);   // couloirs posés (segments droits + morceaux de L)
+	DestroyArray(FillerModules);   // modules de comblement, connecteurs, etc. si tu en as
+
+	// 2) Par sécurité : si des couloirs/fillers ont été spawnés sans être trackés,
+	//    on détruit les acteurs attachés au CorridorsRoot portant nos tags.
+	if (CorridorsRoot)
+	{
+		TArray<AActor*> Attached;
+		GetAttachedActors(Attached); // tous les enfants de l'Actor courant
+
+		for (AActor* A : Attached)
+		{
+			if (!IsValid(A)) continue;
+
+			const bool bIsCorridorLike =
+				A->Tags.Contains(TEXT("Corridor")) || A->Tags.Contains(TEXT("Filler"));
+
+			if (bIsCorridorLike)
+			{
+				A->Destroy();
+			}
+		}
+	}
+
+	// 3) Optionnel : si, par mégarde, des couloirs se trouvent dans roomsArray, on les enlève aussi.
+	for (int32 i = roomsArray.Num() - 1; i >= 0; --i)
+	{
+		ARoom* R = roomsArray[i];
+		if (!IsValid(R)) { roomsArray.RemoveAtSwap(i); continue; }
+
+		if (R->Tags.Contains(TEXT("Corridor")) || R->Tags.Contains(TEXT("Filler")))
+		{
+			R->Destroy();
+			roomsArray.RemoveAtSwap(i);
+		}
+	}
+}
 void AGenerator::ClearSuperTriangle()
 {
 	for (Point* P : superTriangle.Points)
@@ -704,4 +754,206 @@ void AGenerator::RemoveMinorRoomsOutOfDungeon(float CorridorPad /*=8.f*/)
 			roomsArray.RemoveAtSwap(i);
 		}
 	}
+}
+
+bool AGenerator::FillAxisGapBetween(AActor* A, AActor* B)
+{
+    if (!IsValid(A) || !IsValid(B)) return false;
+
+    FVector2D Amin, Amax, Bmin, Bmax;
+    float ZA, ZB;
+    GetBox2D(A, Amin, Amax, ZA);
+    GetBox2D(B, Bmin, Bmax, ZB);
+
+    // --- Cas 1 : faces verticales qui se font face (gap sur X, chevauchement sur Y)
+    if (Amax.X <= Bmin.X) // A à gauche, B à droite
+    {
+        const float gap = Bmin.X - Amax.X;
+        const float overlapY = FMath::Min(Amax.Y, Bmax.Y) - FMath::Max(Amin.Y, Bmin.Y);
+        if (gap > 0.f && gap <= MaxFillGap && overlapY >= MinOverlapToFill)
+        {
+            const float y0 = FMath::Max(Amin.Y, Bmin.Y);
+            const float y1 = FMath::Min(Amax.Y, Bmax.Y);
+            return SpawnRectFill(FVector2D(Amax.X, y0), FVector2D(Bmin.X, y1), FMath::Min(ZA,ZB)) != nullptr;
+        }
+    }
+    else if (Bmax.X <= Amin.X) // B à gauche, A à droite
+    {
+        const float gap = Amin.X - Bmax.X;
+        const float overlapY = FMath::Min(Amax.Y, Bmax.Y) - FMath::Max(Amin.Y, Bmin.Y);
+        if (gap > 0.f && gap <= MaxFillGap && overlapY >= MinOverlapToFill)
+        {
+            const float y0 = FMath::Max(Amin.Y, Bmin.Y);
+            const float y1 = FMath::Min(Amax.Y, Bmax.Y);
+            return SpawnRectFill(FVector2D(Bmax.X, y0), FVector2D(Amin.X, y1), FMath::Min(ZA,ZB)) != nullptr;
+        }
+    }
+
+    // --- Cas 2 : faces horizontales qui se font face (gap sur Y, chevauchement sur X)
+    if (Amax.Y <= Bmin.Y) // A en bas, B en haut
+    {
+        const float gap = Bmin.Y - Amax.Y;
+        const float overlapX = FMath::Min(Amax.X, Bmax.X) - FMath::Max(Amin.X, Bmin.X);
+        if (gap > 0.f && gap <= MaxFillGap && overlapX >= MinOverlapToFill)
+        {
+            const float x0 = FMath::Max(Amin.X, Bmin.X);
+            const float x1 = FMath::Min(Amax.X, Bmax.X);
+            return SpawnRectFill(FVector2D(x0, Amax.Y), FVector2D(x1, Bmin.Y), FMath::Min(ZA,ZB)) != nullptr;
+        }
+    }
+    else if (Bmax.Y <= Amin.Y) // B en bas, A en haut
+    {
+        const float gap = Amin.Y - Bmax.Y;
+        const float overlapX = FMath::Min(Amax.X, Bmax.X) - FMath::Max(Amin.X, Bmin.X);
+        if (gap > 0.f && gap <= MaxFillGap && overlapX >= MinOverlapToFill)
+        {
+            const float x0 = FMath::Max(Amin.X, Bmin.X);
+            const float x1 = FMath::Min(Amax.X, Bmax.X);
+            return SpawnRectFill(FVector2D(x0, Bmax.Y), FVector2D(x1, Amin.Y), FMath::Min(ZA,ZB)) != nullptr;
+        }
+    }
+
+    return false;
+}
+
+void AGenerator::BuildFillers()
+{
+	// --- Snapshots pour ne PAS modifier les arrays pendant qu’on itère
+	const TArray<ARoom*> RoomsSnap = roomsArray;          // si tu ne modifies pas roomsArray ici, ce n'est pas obligé
+	const TArray<ARoom*> CorrSnap  = CorridorRooms;       // important !
+
+	TArray<FRectToFill> ToCreate;
+	ToCreate.Reserve(128);
+
+	// 1) Room ↔ Corridor
+	for (ARoom* R : RoomsSnap)
+	{
+		if (!IsValid(R)) continue;
+		for (ARoom* C : CorrSnap)
+		{
+			if (!IsValid(C)) continue;
+			FRectToFill Rect{};
+			if (ComputeAxisGapBetween(R, C, Rect))
+				ToCreate.Add(Rect);
+		}
+	}
+
+	// 2) Corridor ↔ Corridor
+	for (int32 i = 0; i < CorrSnap.Num(); ++i)
+	{
+		ARoom* A = CorrSnap[i]; if (!IsValid(A)) continue;
+		for (int32 j = i + 1; j < CorrSnap.Num(); ++j)
+		{
+			ARoom* B = CorrSnap[j]; if (!IsValid(B)) continue;
+			FRectToFill Rect{};
+			if (ComputeAxisGapBetween(A, B, Rect))
+				ToCreate.Add(Rect);
+		}
+	}
+
+	// 3) On spawn MAINTENANT (hors itérations) → pas d’invalidation d’itérateur
+	for (const FRectToFill& R : ToCreate)
+	{
+		SpawnRectFill(R.MinXY, R.MaxXY, R.Z);
+	}
+}
+
+bool AGenerator::ComputeAxisGapBetween(AActor* A, AActor* B, FRectToFill& OutRect)
+{
+    if (!IsValid(A) || !IsValid(B)) return false;
+
+    auto GetBox2D = [](AActor* Act, FVector2D& MinXY, FVector2D& MaxXY, float& Z)
+    {
+        FVector C, E; Act->GetActorBounds(false, C, E);
+        MinXY = { C.X - E.X, C.Y - E.Y };
+        MaxXY = { C.X + E.X, C.Y + E.Y };
+        Z = C.Z;
+    };
+
+    FVector2D Amin, Amax, Bmin, Bmax;
+    float ZA, ZB;
+    GetBox2D(A, Amin, Amax, ZA);
+    GetBox2D(B, Bmin, Bmax, ZB);
+
+    // Faces verticales qui se font face (gap sur X, chevauchement sur Y)
+    if (Amax.X <= Bmin.X)
+    {
+        const float gap = Bmin.X - Amax.X;
+        const float overlapY = FMath::Min(Amax.Y, Bmax.Y) - FMath::Max(Amin.Y, Bmin.Y);
+        if (gap > 0.f && gap <= MaxFillGap && overlapY >= MinOverlapToFill)
+        {
+            OutRect = { FVector2D(Amax.X, FMath::Max(Amin.Y, Bmin.Y)),
+                        FVector2D(Bmin.X, FMath::Min(Amax.Y, Bmax.Y)),
+                        FMath::Min(ZA, ZB) };
+            return true;
+        }
+    }
+    else if (Bmax.X <= Amin.X)
+    {
+        const float gap = Amin.X - Bmax.X;
+        const float overlapY = FMath::Min(Amax.Y, Bmax.Y) - FMath::Max(Amin.Y, Bmin.Y);
+        if (gap > 0.f && gap <= MaxFillGap && overlapY >= MinOverlapToFill)
+        {
+            OutRect = { FVector2D(Bmax.X, FMath::Max(Amin.Y, Bmin.Y)),
+                        FVector2D(Amin.X, FMath::Min(Amax.Y, Bmax.Y)),
+                        FMath::Min(ZA, ZB) };
+            return true;
+        }
+    }
+
+    // Faces horizontales qui se font face (gap sur Y, chevauchement sur X)
+    if (Amax.Y <= Bmin.Y)
+    {
+        const float gap = Bmin.Y - Amax.Y;
+        const float overlapX = FMath::Min(Amax.X, Bmax.X) - FMath::Max(Amin.X, Bmin.X);
+        if (gap > 0.f && gap <= MaxFillGap && overlapX >= MinOverlapToFill)
+        {
+            OutRect = { FVector2D(FMath::Max(Amin.X, Bmin.X), Amax.Y),
+                        FVector2D(FMath::Min(Amax.X, Bmax.X), Bmin.Y),
+                        FMath::Min(ZA, ZB) };
+            return true;
+        }
+    }
+    else if (Bmax.Y <= Amin.Y)
+    {
+        const float gap = Amin.Y - Bmax.Y;
+        const float overlapX = FMath::Min(Amax.X, Bmax.X) - FMath::Max(Amin.X, Bmin.X);
+        if (gap > 0.f && gap <= MaxFillGap && overlapX >= MinOverlapToFill)
+        {
+            OutRect = { FVector2D(FMath::Max(Amin.X, Bmin.X), Bmax.Y),
+                        FVector2D(FMath::Min(Amax.X, Bmax.X), Amin.Y),
+                        FMath::Min(ZA, ZB) };
+            return true;
+        }
+    }
+
+    return false;
+}
+
+ARoom* AGenerator::SpawnRectFill(const FVector2D& MinXY, const FVector2D& MaxXY, float Z)
+{
+	if (!FillerToSpawn) return nullptr;
+
+	const FVector2D Size = MaxXY - MinXY;
+	if (Size.X <= 1.f || Size.Y <= 1.f) return nullptr;
+
+	const FVector Mid( (MinXY.X + MaxXY.X) * 0.5f, (MinXY.Y + MaxXY.Y) * 0.5f, FillerZ );
+
+	FActorSpawnParameters P;
+	P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARoom* R = GetWorld()->SpawnActor<ARoom>(FillerToSpawn, Mid, FRotator::ZeroRotator, P);
+	if (!R) return nullptr;
+
+	FVector C, E; R->GetActorBounds(false, C, E);
+	const float SX = (Size.X * 0.5f) / FMath::Max(1.f, E.X);
+	const float SY = (Size.Y * 0.5f) / FMath::Max(1.f, E.Y);
+	R->SetActorScale3D(FVector(SX, SY, 0.1f));
+
+	if (CorridorsRoot) R->AttachToComponent(CorridorsRoot, FAttachmentTransformRules::KeepWorldTransform);
+	R->Tags.Add(TEXT("Filler"));
+
+	// On enregistre APRÈS, en-dehors des boucles d’itération
+	CorridorRooms.Add(R);
+	FillerModules.Add(R);
+	return R;
 }
