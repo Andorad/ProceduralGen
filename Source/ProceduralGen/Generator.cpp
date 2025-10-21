@@ -1,24 +1,16 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "Generator.h"
 
-// Sets default values
 AGenerator::AGenerator()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 }
 
-// Called when the game starts or when spawned
 void AGenerator::BeginPlay()
 {
 	Super::BeginPlay();
+
+	MakeDungeon();
 	
-	SpawnRoomsInRadius();
-	SeparateRooms();
-	SetSuperTriangle();
-	Triangulation();
 }
 
 void AGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -29,7 +21,6 @@ void AGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	
 }
 
-// Called every frame
 void AGenerator::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -45,7 +36,6 @@ void AGenerator::MakeDungeon()
 	PrimAlgorithm();
 }
 
-// Create Room and Points
 void AGenerator::SpawnRoomsInRadius()
 {
 	for (int i = 0; i < roomNumber; i++)
@@ -66,7 +56,7 @@ void AGenerator::SpawnRoomsInRadius()
 			
 			Room->SetColor(bIsMajor ? MajorMat : SecondaryMat);
 			Room->isMajor = bIsMajor;
-			Point* point =  DungeonFunction.MakePoint(bIsMajor, Room);
+			Point* point =  DungeonFunction.MakePoint(Room);
 			
 			if (bIsMajor)MajorPoints.Add(point);
 			
@@ -115,6 +105,7 @@ void AGenerator::SeparateRooms()
                 	}
 
                 	float Move = 0.5f * FMath::Min(dx, dy) * FMath::FRandRange(0.95f, 1.05f);
+
                 	A->AddActorWorldOffset(- Dir * Move, false);
                 	B->AddActorWorldOffset(Dir * Move,  false);
 
@@ -124,8 +115,7 @@ void AGenerator::SeparateRooms()
             }
         }
 		
-        if (!bAnyMoved)
-           break; 
+        if (!bAnyMoved) break; 
     }
 
 	ReasignPointPosition();
@@ -162,24 +152,22 @@ void AGenerator::SetSuperTriangle()
 	if (summitB) DebugRooms.Add(summitB);
 	if (summitC) DebugRooms.Add(summitC);
 
-	Point* STA = DungeonFunction.MakePoint(true, summitA);
-	Point* STB = DungeonFunction.MakePoint(true, summitB);
-	Point* STC = DungeonFunction.MakePoint(true, summitC);
+	Point* STA = DungeonFunction.MakePoint(summitA);
+	Point* STB = DungeonFunction.MakePoint(summitB);
+	Point* STC = DungeonFunction.MakePoint(summitC);
 	
 	superTriangle.Points.Append({STA, STB, STC});
 	trianglesArray.Add(superTriangle);
 }
 
-FVector AGenerator::RandomPointInDisk(float radius)
+FVector AGenerator::RandomPointInDisk(float Radius)
 {
 	const float Angle = FMath::FRandRange(0.f, 2.f * PI);
-	const float r = radius * FMath::Sqrt(FMath::FRand());
+	const float r = Radius * FMath::Sqrt(FMath::FRand());
 	const float x = r * FMath::Cos(Angle);
 	const float y = r * FMath::Sin(Angle);
 	return FVector(x, y, 0.f);
 }
-
-
 
 void AGenerator::ReasignPointPosition()
  {
@@ -189,7 +177,6 @@ void AGenerator::ReasignPointPosition()
  	}
  }
 
-//Triangulation
 void AGenerator::Triangulation()
 {
 	for (int i = 0; i < PointsArray.Num(); i++)
@@ -216,12 +203,12 @@ void AGenerator::Triangulation()
 	ClearSuperTriangle();
 }
 
-TArray<Triangle> AGenerator::CollectBadTriangles(int i)
+TArray<Triangle> AGenerator::CollectBadTriangles(int I)
 {
 	TArray<Triangle> badTriangles;
 	for (Triangle& T : trianglesArray)
 	{
-		if (T.IsPointInPointCircumCircle(PointsArray[i]->Pos))
+		if (T.IsPointInPointCircumCircle(PointsArray[I]->Pos))
 		{
 			badTriangles.Add(T);
 		}
@@ -322,20 +309,21 @@ Edge* AGenerator::FindOrCreateEdge(Point* A, Point* B)
 	return NewE;
 }
 
-void AGenerator::PushPathPossibility(Point* current)
+void AGenerator::PushPathPossibility(Point* Current)
 {
-	for (Edge* E : current->Edges)
+	for (Edge* E : Current->Edges)
 	{
 		if (!E) continue;
-		Point* To = (E->A == current) ? E->B : (E->B == current ? E->A : nullptr);
+		
+		Point* To = (E->A == Current) ? E->B : (E->B == Current ? E->A : nullptr);
+		
 		if (!To || To->bVisited) continue;
     
-		FMstEntry Ent = DungeonFunction.MakeEntry(E, current,To, E->weight);
+		FMstEntry Ent = DungeonFunction.MakeEntry(E, Current, To);
 		CandidateEdges.Add(Ent);
-    	}
+	}
 }
 
-// Prim Algorithm
 void AGenerator::PrimAlgorithm()
 {
 	MSTEdges.Empty();
@@ -350,7 +338,6 @@ void AGenerator::PrimAlgorithm()
 	
 	while (true)
     {
-        // DeadEnd
         if (CandidateEdges.Num() == 0)
         {
             Point* Seed = nullptr;
@@ -362,15 +349,14 @@ void AGenerator::PrimAlgorithm()
                 	break;
                 }
             }
-            if (!Seed) break; // All points connected
+            if (!Seed) break;
 
             Seed->bVisited = true;
             
         	PushPathPossibility(Seed);
             continue;
         }
-
-        // Lightest Edge
+		
         int32 BestIdx = INDEX_NONE;
         float BestW   = FLT_MAX;
 
@@ -383,29 +369,26 @@ void AGenerator::PrimAlgorithm()
                 BestIdx = i;
             }
         }
-
-        // No valid entries
+		
         if (BestIdx == INDEX_NONE)
         {
             CandidateEdges.Empty();
             continue;
         }
-
-        // Validate Edge
+		
         FMstEntry Best = CandidateEdges[BestIdx];
         CandidateEdges.RemoveAtSwap(BestIdx);
 
         MSTEdges.Add(Best.E);
         Best.To->bVisited = true;
-
-        // Push Path
+		
         current = Best.To;
 		PushPathPossibility(current);
     }
 
 	BuildCorridorsFromMST_Meshes();
-	RemoveMinorRoomsOutOfDungeon(/*CorridorPad=*/8.f);
-	BuildFillers();
+	RemoveMinorRoomsOutOfDungeon();
+	
 }
 
 Point* AGenerator::SelectRandomMajorPoint()
@@ -719,7 +702,7 @@ ARoom* AGenerator::SpawnCorridorSegment(const FVector& A, const FVector& B)
 	return Seg;
 }
 
-void AGenerator::RemoveMinorRoomsOutOfDungeon(float CorridorPad /*=8.f*/)
+void AGenerator::RemoveMinorRoomsOutOfDungeon()
 {
 	TArray<FBox> CorridorBoxes;
 	CorridorBoxes.Reserve(CorridorRooms.Num());
@@ -728,19 +711,16 @@ void AGenerator::RemoveMinorRoomsOutOfDungeon(float CorridorPad /*=8.f*/)
 		if (!IsValid(C)) continue;
 		CorridorBoxes.Add(MakeActorBox(C, CorridorPad));
 	}
-
-	// Parcours des minor rooms (en arrière pour pouvoir remove)
+	
 	for (int32 i = roomsArray.Num() - 1; i >= 0; --i)
 	{
 		ARoom* R = roomsArray[i];
 		if (!IsValid(R)) { roomsArray.RemoveAtSwap(i); continue; }
-
-		// On ne touche pas aux majors, ni aux couloirs déjà listés
+		
 		if (R->isMajor || CorridorRooms.Contains(R) || R->Tags.Contains(TEXT("Corridor")))
 			continue;
-
-		// => c’est une MINOR room : garde-la seulement si elle intersecte un couloir
-		const FBox RB = MakeActorBox(R, /*Pad*/ 0.f);
+		
+		const FBox RB = MakeActorBox(R, 0.f);
 		bool bTouchesCorridor = false;
 
 		for (const FBox& CB : CorridorBoxes)
@@ -814,48 +794,6 @@ bool AGenerator::FillAxisGapBetween(AActor* A, AActor* B)
     }
 
     return false;
-}
-
-void AGenerator::BuildFillers()
-{
-	// --- Snapshots pour ne PAS modifier les arrays pendant qu’on itère
-	const TArray<ARoom*> RoomsSnap = roomsArray;          // si tu ne modifies pas roomsArray ici, ce n'est pas obligé
-	const TArray<ARoom*> CorrSnap  = CorridorRooms;       // important !
-
-	TArray<FRectToFill> ToCreate;
-	ToCreate.Reserve(128);
-
-	// 1) Room ↔ Corridor
-	for (ARoom* R : RoomsSnap)
-	{
-		if (!IsValid(R)) continue;
-		for (ARoom* C : CorrSnap)
-		{
-			if (!IsValid(C)) continue;
-			FRectToFill Rect{};
-			if (ComputeAxisGapBetween(R, C, Rect))
-				ToCreate.Add(Rect);
-		}
-	}
-
-	// 2) Corridor ↔ Corridor
-	for (int32 i = 0; i < CorrSnap.Num(); ++i)
-	{
-		ARoom* A = CorrSnap[i]; if (!IsValid(A)) continue;
-		for (int32 j = i + 1; j < CorrSnap.Num(); ++j)
-		{
-			ARoom* B = CorrSnap[j]; if (!IsValid(B)) continue;
-			FRectToFill Rect{};
-			if (ComputeAxisGapBetween(A, B, Rect))
-				ToCreate.Add(Rect);
-		}
-	}
-
-	// 3) On spawn MAINTENANT (hors itérations) → pas d’invalidation d’itérateur
-	for (const FRectToFill& R : ToCreate)
-	{
-		SpawnRectFill(R.MinXY, R.MaxXY, R.Z);
-	}
 }
 
 bool AGenerator::ComputeAxisGapBetween(AActor* A, AActor* B, FRectToFill& OutRect)
@@ -951,8 +889,7 @@ ARoom* AGenerator::SpawnRectFill(const FVector2D& MinXY, const FVector2D& MaxXY,
 
 	if (CorridorsRoot) R->AttachToComponent(CorridorsRoot, FAttachmentTransformRules::KeepWorldTransform);
 	R->Tags.Add(TEXT("Filler"));
-
-	// On enregistre APRÈS, en-dehors des boucles d’itération
+	
 	CorridorRooms.Add(R);
 	FillerModules.Add(R);
 	return R;
