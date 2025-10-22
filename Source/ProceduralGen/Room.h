@@ -52,4 +52,5 @@ public:
 	 * @brief Indique si la salle est une salle majeure (par exemple une pièce principale ou centrale).
 	 */
 	bool isMajor = false;
+	bool isCorridor = false;
 };

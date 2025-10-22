@@ -163,6 +163,7 @@ public:
 	// ======================================================================
 
 	/** @brief Exécute l’algorithme de Prim pour construire le graphe des connexions principales. */
+	UFUNCTION(CallInEditor, Category = "Dungeon|Creation")
 	void PrimAlgorithm();
 
 	/** @brief Sélectionne un point majeur aléatoire pour initier l’arbre couvrant. */
@@ -227,6 +228,12 @@ public:
 
 	/** @brief Supprime les salles mineures situées hors de la zone principale du donjon. */
 	void RemoveMinorRoomsOutOfDungeon();
+
+	/** @brief Décale les salles mineures qui se superposent aux couloirs. */
+	void MoveMinorRoomsOutOfCorridors();
+	
+	/** @brief Vérifie si les salles mineures se superposent aux couloirs. */
+	bool DoesRoomOverlapAnyOtherRoom(ARoom* Room, float Padding);
 
 	// ======================================================================
 	// ----------------------------- FILLER ---------------------------------

@@ -1,5 +1,8 @@
 #include "Generator.h"
 
+#include "EngineUtils.h"
+#include "Compression/lz4.h"
+
 AGenerator::AGenerator()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -34,6 +37,7 @@ void AGenerator::MakeDungeon()
 	SetSuperTriangle();
 	Triangulation();
 	PrimAlgorithm();
+	
 }
 
 void AGenerator::SpawnRoomsInRadius()
@@ -127,6 +131,8 @@ void AGenerator::SetSuperTriangle()
 	float minX = TNumericLimits<float>::Max();
 	float maxY = TNumericLimits<float>::Lowest();
 	float minY = TNumericLimits<float>::Max();
+
+	if (PointsArray.Num() <= 0) return;
 	
 	
 	for (int i = 0; i < PointsArray.Num(); ++i)
@@ -179,6 +185,8 @@ void AGenerator::ReasignPointPosition()
 
 void AGenerator::Triangulation()
 {
+	if (PointsArray.Num() <= 0) return;
+	
 	for (int i = 0; i < PointsArray.Num(); i++)
 	{
 		if (PointsArray[i]->Room->isMajor)
@@ -388,7 +396,7 @@ void AGenerator::PrimAlgorithm()
 
 	BuildCorridorsFromMST_Meshes();
 	RemoveMinorRoomsOutOfDungeon();
-	
+	MoveMinorRoomsOutOfCorridors();
 }
 
 Point* AGenerator::SelectRandomMajorPoint()
@@ -524,6 +532,7 @@ void AGenerator::ClearTriangles()
 	
 	FlushPersistentDebugLines(GetWorld());
 }
+
 void AGenerator::ClearCorridors()
 {
 	// 1) Détruire tout ce que nous avons explicitement tracké
@@ -695,6 +704,7 @@ ARoom* AGenerator::SpawnCorridorSegment(const FVector& A, const FVector& B)
 	if (CorridorsRoot) Seg->AttachToComponent(CorridorsRoot, FAttachmentTransformRules::KeepWorldTransform);
 	CorridorRooms.Add(Seg);
 	roomsArray.Add(Seg);
+	Seg->isCorridor = true;
 
 	// (Facultatif) tag pour filtrer plus tard
 	Seg->Tags.Add(TEXT("Corridor"));
@@ -734,6 +744,7 @@ void AGenerator::RemoveMinorRoomsOutOfDungeon()
 			roomsArray.RemoveAtSwap(i);
 		}
 	}
+	ReasignPointPosition();
 }
 
 bool AGenerator::FillAxisGapBetween(AActor* A, AActor* B)
@@ -893,4 +904,218 @@ ARoom* AGenerator::SpawnRectFill(const FVector2D& MinXY, const FVector2D& MaxXY,
 	CorridorRooms.Add(R);
 	FillerModules.Add(R);
 	return R;
+}
+
+void AGenerator::MoveMinorRoomsOutOfCorridors()
+{
+	const int32 MaxIterations = 30;
+	const float _padding = 0.f;
+	const float TryDistanceFactor = 2.0f; // Distance de repositionnement
+	TArray<ARoom*> SecondaryRooms;
+	TArray<ARoom*> MajorRooms;
+
+	if (roomsArray.Num() <= 1)
+		return;
+
+	// Identifie les pièces secondaires et principales
+	for (ARoom* A : roomsArray)
+	{
+		if (!IsValid(A)) continue;
+
+		if (A->isMajor)
+			MajorRooms.Add(A);
+		else if (!A->isCorridor)
+			SecondaryRooms.Add(A);
+	}
+
+	if (SecondaryRooms.Num() == 0 || CorridorRooms.Num() == 0)
+		return;
+
+	TSet<ARoom*> LockedRooms;
+	for (ARoom* A : MajorRooms)
+	{
+		if (IsValid(A))
+			LockedRooms.Add(A);
+	}
+
+	// --- PHASE 1 : Déplacement progressif ---
+	for (int32 Iter = 0; Iter < MaxIterations; ++Iter)
+	{
+		bool bAnyMoved = false;
+
+		for (ARoom* Room : SecondaryRooms)
+		{
+			if (!IsValid(Room) || LockedRooms.Contains(Room))
+				continue;
+
+			FVector Center, Extent;
+			Room->GetActorBounds(false, Center, Extent);
+			const float RoomRadius = FMath::Max(Extent.X, Extent.Y) + _padding;
+
+			FVector RepulseDir = FVector::ZeroVector;
+			int32 NumHits = 0;
+
+			// Repousse depuis les couloirs
+			for (AActor* Corridor : CorridorRooms)
+			{
+				if (!IsValid(Corridor)) continue;
+
+				FVector CorrCenter, CorrExtent;
+				Corridor->GetActorBounds(false, CorrCenter, CorrExtent);
+
+				const bool bOverlapX = FMath::Abs(Center.X - CorrCenter.X) < (Extent.X + CorrExtent.X + _padding);
+				const bool bOverlapY = FMath::Abs(Center.Y - CorrCenter.Y) < (Extent.Y + CorrExtent.Y + _padding);
+
+				if (bOverlapX && bOverlapY)
+				{
+					FVector Away = (Center - CorrCenter).GetSafeNormal();
+					if (Away.IsNearlyZero())
+						Away = FVector(FMath::FRandRange(-1.f, 1), FMath::FRandRange(-1.f, 1), 0).GetSafeNormal();
+
+					RepulseDir += Away;
+					NumHits++;
+				}
+			}
+
+			// Repousse aussi depuis les pièces principales
+			for (ARoom* Major : MajorRooms)
+			{
+				if (!IsValid(Major)) continue;
+
+				FVector MCenter, MExtent;
+				Major->GetActorBounds(false, MCenter, MExtent);
+
+				const bool bOverlapX = FMath::Abs(Center.X - MCenter.X) < (Extent.X + MExtent.X + _padding);
+				const bool bOverlapY = FMath::Abs(Center.Y - MCenter.Y) < (Extent.Y + MExtent.Y + _padding);
+
+				if (bOverlapX && bOverlapY)
+				{
+					FVector Away = (Center - MCenter).GetSafeNormal();
+					if (Away.IsNearlyZero())
+						Away = FVector(FMath::FRandRange(-1.f, 1), FMath::FRandRange(-1.f, 1), 0).GetSafeNormal();
+
+					RepulseDir += Away;
+					NumHits++;
+				}
+			}
+
+			// Applique le déplacement
+			if (NumHits > 0)
+			{
+				RepulseDir.Normalize();
+				const float MoveDist = /*RoomRadius **/ .25f * FMath::FRandRange(0.9f, 1.1f);
+				Room->AddActorWorldOffset(RepulseDir * MoveDist, false);
+				bAnyMoved = true;
+			}
+		}
+
+		if (!bAnyMoved)
+			break;
+	}
+
+	// --- PHASE 2 : repositionnement ou suppression ---
+	TArray<ARoom*> RoomsToRemove;
+
+	for (ARoom* Room : SecondaryRooms)
+	{
+		if (!IsValid(Room)) continue;
+
+		if (!DoesRoomOverlapAnyOtherRoom(Room, _padding))
+			continue; // ok, elle ne touche plus rien
+
+		// Sinon, essaie de la déplacer dans les 4 directions
+		FVector OriginalPos = Room->GetActorLocation();
+		FVector Directions[4] = {
+			FVector(1, 0, 0),
+			FVector(-1, 0, 0),
+			FVector(0, 1, 0),
+			FVector(0, -1, 0)
+		};
+
+		FVector BestPos = OriginalPos;
+		bool bFoundValidSpot = false;
+
+		FVector Center, Extent;
+		Room->GetActorBounds(false, Center, Extent);
+		const float TryDistance = FMath::Max(Extent.X, Extent.Y) * TryDistanceFactor;
+
+		for (FVector Dir : Directions)
+		{
+			FVector NewPos = OriginalPos + Dir * TryDistance;
+			Room->SetActorLocation(NewPos, false);
+
+			if (!DoesRoomOverlapAnyOtherRoom(Room, _padding))
+			{
+				bFoundValidSpot = true;
+				BestPos = NewPos;
+				break;
+			}
+			else
+			{
+				Room->SetActorLocation(OriginalPos, false);
+			}
+		}
+
+		// ✅ Si aucune position n'est valide : détruire la pièce
+		if (!bFoundValidSpot)
+		{
+			RoomsToRemove.Add(Room);
+		}
+		else
+		{
+			Room->SetActorLocation(BestPos, false);
+		}
+	}
+
+	// --- Suppression effective des pièces invalides ---
+	for (ARoom* Room : RoomsToRemove)
+	{
+		if (!IsValid(Room)) continue;
+
+		roomsArray.Remove(Room);
+		Room->Destroy();
+	}
+}
+
+
+
+bool AGenerator::DoesRoomOverlapAnyOtherRoom(ARoom* Room, float Padding)
+{
+	if (!IsValid(Room))
+		return false;
+
+	FVector Center, Extent;
+	Room->GetActorBounds(false, Center, Extent);
+
+	for (ARoom* Other : roomsArray)
+	{
+		if (!IsValid(Other) || Other == Room) 
+			continue; // Ignore soi-même
+
+		FVector OtherCenter, OtherExtent;
+		Other->GetActorBounds(false, OtherCenter, OtherExtent);
+
+		const bool bOverlapX = FMath::Abs(Center.X - OtherCenter.X) < (Extent.X + OtherExtent.X + Padding);
+		const bool bOverlapY = FMath::Abs(Center.Y - OtherCenter.Y) < (Extent.Y + OtherExtent.Y + Padding);
+
+		if (bOverlapX && bOverlapY)
+			return true;
+	}
+
+	// --- Vérifie les couloirs aussi ---
+	for (AActor* Corridor : CorridorRooms)
+	{
+		if (!IsValid(Corridor)) continue;
+
+		FVector CorrCenter, CorrExtent;
+		Corridor->GetActorBounds(false, CorrCenter, CorrExtent);
+
+		const bool bOverlapX = FMath::Abs(Center.X - CorrCenter.X) < (Extent.X + CorrExtent.X + Padding);
+		const bool bOverlapY = FMath::Abs(Center.Y - CorrCenter.Y) < (Extent.Y + CorrExtent.Y + Padding);
+
+		if (bOverlapX && bOverlapY)
+			return true;
+	}
+
+	return false;
 }
