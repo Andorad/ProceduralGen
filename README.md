@@ -5,13 +5,14 @@
 Ce projet implémente un **générateur procédural de donjons**, basé sur la **triangulation de Delaunay** et l’**algorithme de Prim**.  
 Il permet de créer dynamiquement des réseaux de salles reliées entre elles par des couloirs, garantissant une structure cohérente.
 
+Pour tester facilement, il est possible de cliquer sur l'objet Generator puis d'écrire **"Dungeon"** dans la barre de recherche pour
+avoir accès à toutes les fonctions utiles à la création/destruction du donjon depuis l'éditeur.
+
 ---
 
 ##  Fondements théoriques
 
 ###  1. Triangulation de Delaunay
-
-
 
 
 L’algorithme utilisé ici est **Bowyer-Watson (1981)** :
