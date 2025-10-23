@@ -1,5 +1,8 @@
 #  Procedural Dungeon Generator – Unreal Engine 5
 
+### Collaborators
+Mathilde Grillon & Théo Lopez
+
 ##  Présentation
 
 Ce projet implémente un **générateur procédural de donjons**, basé sur la **triangulation de Delaunay** et l’**algorithme de Prim**.  
@@ -77,3 +80,4 @@ Représente une salle ou un couloir dans le monde.
 Fonction :
 ```cpp
 void SetColor(UMaterialInterface* _mat);
+
